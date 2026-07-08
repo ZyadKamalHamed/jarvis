@@ -354,6 +354,16 @@ function ensureAudioCtx() {
   if (audioCtx.state === 'suspended') audioCtx.resume()
 }
 
+let currentSpeech = null
+
+function stopSpeech() {
+  if (currentSpeech) {
+    currentSpeech.pause()
+    currentSpeech.src = ''
+    currentSpeech = null
+  }
+}
+
 function pulseCoreFrom(el) {
   ensureAudioCtx()
   const src = audioCtx.createMediaElementSource(el)
@@ -363,8 +373,12 @@ function pulseCoreFrom(el) {
   document.body.classList.add('speaking')
   function loop() {
     if (el.paused || el.ended) {
-      document.body.classList.remove('speaking')
-      core.setAttribute('r', 26)
+      // Only the active utterance may clear the speaking state; a stopped
+      // one racing a new one must not strip the pulse mid-sentence.
+      if (!currentSpeech || currentSpeech === el) {
+        document.body.classList.remove('speaking')
+        core.setAttribute('r', 26)
+      }
       return
     }
     analyser.getByteFrequencyData(buf)
@@ -377,12 +391,16 @@ function pulseCoreFrom(el) {
 
 async function speak(text) {
   if (!text || !soundOn) return
+  stopSpeech()
   try {
     const res = await fetch('/api/tts', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text }) })
     if (!res.ok) throw new Error('tts ' + res.status)
     const blob = await res.blob()
+    stopSpeech() // a second request may have started while this one was rendering
     const el = new Audio(URL.createObjectURL(blob))
     el.crossOrigin = 'anonymous'
+    currentSpeech = el
+    el.addEventListener('ended', () => { if (currentSpeech === el) currentSpeech = null })
     pulseCoreFrom(el)
     await el.play()
   } catch (e) {
@@ -485,10 +503,14 @@ $('#audio-toggle').addEventListener('click', () => {
   soundOn = !soundOn
   $('#audio-toggle').textContent = soundOn ? 'SND ON' : 'SND OFF'
   const boot = $('#boot-audio')
-  if (!soundOn && !boot.paused) boot.pause()
+  if (!soundOn) {
+    if (!boot.paused) boot.pause()
+    stopSpeech()
+  }
 })
 
 $('#speak-briefing').addEventListener('click', () => {
+  if (currentSpeech) { stopSpeech(); return }
   const script = DATA?.briefing?.voiceScript
   if (script) speak(script)
 })
