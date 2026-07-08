@@ -371,12 +371,14 @@ function pulseCoreFrom(el) {
   const buf = new Uint8Array(analyser.frequencyBinCount)
   const core = $('#r-core')
   document.body.classList.add('speaking')
+  $('#speak-briefing').textContent = 'STOP'
   function loop() {
     if (el.paused || el.ended) {
       // Only the active utterance may clear the speaking state; a stopped
       // one racing a new one must not strip the pulse mid-sentence.
       if (!currentSpeech || currentSpeech === el) {
         document.body.classList.remove('speaking')
+        $('#speak-briefing').textContent = 'SPEAK'
         core.setAttribute('r', 26)
       }
       return
@@ -513,6 +515,11 @@ $('#speak-briefing').addEventListener('click', () => {
   if (currentSpeech) { stopSpeech(); return }
   const script = DATA?.briefing?.voiceScript
   if (script) speak(script)
+})
+
+$('#voice-stop').addEventListener('click', stopSpeech)
+addEventListener('keydown', e => {
+  if (e.key === 'Escape') stopSpeech()
 })
 
 // ---------- boot sequence ----------

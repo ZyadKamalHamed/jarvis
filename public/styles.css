@@ -119,6 +119,9 @@ body {
   padding: 4px 9px; cursor: pointer;
 }
 .rail-btn:hover { color: var(--cyan); border-color: var(--cyan); }
+.rail-btn.silence { display: none; color: var(--cyan); border-color: var(--cyan); }
+body.speaking .rail-btn.silence { display: inline-block; animation: silence-pulse 1.6s ease-in-out infinite; }
+@keyframes silence-pulse { 50% { box-shadow: 0 0 8px rgba(23, 212, 254, .45); } }
 .clock { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.1; }
 #clock-time { font-family: var(--font-display); font-size: 22px; font-weight: 500; color: var(--cyan); letter-spacing: .08em; }
 #clock-date { font-family: var(--font-mono); font-size: 10.5px; color: var(--dim); letter-spacing: .22em; }
