@@ -2,6 +2,7 @@
 .cache/
 public/assets/boot.mp3
 public/assets/briefing-*
+public/assets/music/
 node_modules/
 .DS_Store
 .venv-jarvis/

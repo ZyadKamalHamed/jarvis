@@ -278,6 +278,23 @@ async function checkin(body) {
   return { ok: true }
 }
 
+// ---------- music playlist ----------
+
+async function listMusic() {
+  const tracks = []
+  if (fs.existsSync(path.join(PUBLIC, 'assets', 'boot.mp3'))) {
+    tracks.push({ file: '/assets/boot.mp3', name: 'Boot track' })
+  }
+  try {
+    for (const f of (await fsp.readdir(path.join(PUBLIC, 'assets', 'music'))).sort()) {
+      if (/\.(mp3|m4a|wav|aac|ogg)$/i.test(f)) {
+        tracks.push({ file: '/assets/music/' + encodeURIComponent(f), name: f.replace(/\.[^.]+$/, '') })
+      }
+    }
+  } catch { /* no music folder yet */ }
+  return { tracks }
+}
+
 // ---------- feedback (fuel for the nightly evolve run) ----------
 
 async function recordFeedback(entry) {
@@ -368,6 +385,9 @@ const server = http.createServer(async (req, res) => {
     }
     if (url.pathname === '/api/checkin' && req.method === 'POST') {
       return json(res, 200, await checkin(await readBody(req)))
+    }
+    if (url.pathname === '/api/music' && req.method === 'GET') {
+      return json(res, 200, await listMusic())
     }
     if (url.pathname === '/api/feedback' && req.method === 'POST') {
       const body = await readBody(req)

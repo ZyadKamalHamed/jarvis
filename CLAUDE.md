@@ -53,7 +53,7 @@ The system improves itself nightly via `jobs/jarvis-evolve.md` (9:30pm agent): r
 - Australian English in UI copy. No em dashes anywhere: not in copy, code, comments or data.
 - No fabricated data. Modules with no real feed yet render their `source: "sample"` state honestly with a SETUP badge.
 - Briefings never invent facts. Unverifiable claims get dropped, not guessed.
-- The boot audio (`public/assets/boot.mp3`, gitignored) is user-supplied. The app must boot cleanly without it.
+- The boot audio (`public/assets/boot.mp3`, gitignored) is user-supplied. The app must boot cleanly without it. Extra tracks dropped into `public/assets/music/` (also gitignored) are listed by `GET /api/music` and playable via the footer player (play/pause, skip, repeat).
 - Never auto-send anything (email, chat, applications) from this system. Telegram notification of "briefing ready" via OpenClaw is the only outbound push.
 
 ## Voice

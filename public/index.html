@@ -134,6 +134,12 @@
   <span class="prompt">jarvis&gt;</span>
   <input id="ask-input" autocomplete="off" spellcheck="false" placeholder="Ask me anything, sir." title="Prefix with fb: to file an improvement request for the nightly evolve run">
   <label class="speak-toggle"><input type="checkbox" id="speak-answers"> voice</label>
+  <div class="player" id="player" hidden>
+    <span class="player-track" id="player-track"></span>
+    <button class="player-btn" id="player-play" title="Play / pause">&#9654;</button>
+    <button class="player-btn" id="player-next" title="Next track">&#9654;&#9654;</button>
+    <button class="player-btn" id="player-repeat" title="Repeat track">&#8635;</button>
+  </div>
 </footer>
 
 <audio id="boot-audio" src="/assets/boot.mp3" preload="auto"></audio>

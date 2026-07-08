@@ -327,6 +327,22 @@ body.speaking .r-core { animation: none; }
 .mic.live { color: var(--void); background: var(--red); border-color: var(--red); animation: breathe 1s infinite; }
 .speak-toggle { font-family: var(--font-mono); font-size: 10.5px; color: var(--dim); letter-spacing: .12em; display: flex; gap: 6px; align-items: center; cursor: pointer; }
 
+/* Music player */
+.player { display: flex; align-items: center; gap: 7px; padding-left: 14px; border-left: 1px solid var(--hairline); }
+.player-track {
+  font-family: var(--font-mono); font-size: 10.5px; color: var(--dim); letter-spacing: .08em;
+  max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.player.playing .player-track { color: var(--cyan-soft); }
+.player-btn {
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: .05em;
+  color: var(--dim); background: none; border: 1px solid var(--hairline);
+  padding: 4px 8px; cursor: pointer;
+}
+.player-btn:hover { color: var(--cyan); border-color: var(--cyan); }
+.player-btn.on { color: var(--cyan); border-color: var(--cyan); background: rgba(23,212,254,.08); }
+.player-btn:disabled { opacity: .35; cursor: default; }
+
 .answer {
   position: fixed; bottom: 64px; left: 50%; transform: translateX(-50%);
   width: min(760px, 92vw); max-height: 42vh; overflow-y: auto; z-index: 29;

@@ -574,6 +574,60 @@ addEventListener('keydown', e => {
   if (e.key === 'Escape') stopSpeech()
 })
 
+// ---------- music player ----------
+
+const music = $('#boot-audio')
+let tracks = []
+let trackIdx = 0
+let repeatOn = localStorage.getItem('jarvis-repeat') === '1'
+
+function updatePlayer() {
+  const t = tracks[trackIdx]
+  $('#player-track').textContent = t ? t.name : 'no tracks'
+  $('#player-play').innerHTML = music.paused ? '&#9654;' : '&#10074;&#10074;'
+  $('#player-repeat').classList.toggle('on', repeatOn)
+  $('#player-next').disabled = tracks.length < 2
+  $('#player').classList.toggle('playing', !music.paused)
+}
+
+function playTrack(i) {
+  if (!tracks.length) return
+  trackIdx = ((i % tracks.length) + tracks.length) % tracks.length
+  const abs = new URL(tracks[trackIdx].file, location.href).href
+  if (music.src !== abs) music.src = tracks[trackIdx].file
+  if (soundOn) music.play().catch(() => {})
+  updatePlayer()
+}
+
+async function loadPlaylist() {
+  try {
+    tracks = (await (await fetch('/api/music')).json()).tracks || []
+  } catch {
+    tracks = []
+  }
+  $('#player').hidden = tracks.length === 0
+  updatePlayer()
+}
+
+$('#player-play').addEventListener('click', () => {
+  if (!music.paused) { music.pause(); return }
+  if (!music.currentSrc) { playTrack(0); return }
+  if (soundOn) music.play().catch(() => {})
+})
+$('#player-next').addEventListener('click', () => playTrack(trackIdx + 1))
+$('#player-repeat').addEventListener('click', () => {
+  repeatOn = !repeatOn
+  localStorage.setItem('jarvis-repeat', repeatOn ? '1' : '0')
+  updatePlayer()
+})
+music.addEventListener('play', updatePlayer)
+music.addEventListener('pause', updatePlayer)
+music.addEventListener('ended', () => {
+  if (repeatOn) { music.currentTime = 0; if (soundOn) music.play().catch(() => {}) }
+  else if (tracks.length > 1) playTrack(trackIdx + 1)
+  else updatePlayer()
+})
+
 // ---------- boot sequence ----------
 
 function synthBootHum() {
@@ -674,6 +728,7 @@ addEventListener('keydown', e => {
     $('#briefing-headline').textContent = 'Server unreachable. Run: node server.mjs'
   })
   connectSSE()
+  loadPlaylist()
   const skip = sessionStorage.getItem('jarvis-booted') || new URLSearchParams(location.search).get('boot') === 'skip'
   if (skip) {
     $('#boot').classList.add('gone')
