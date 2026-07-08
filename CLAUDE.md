@@ -37,7 +37,10 @@ Everything under `data/` is written by the daily agent (`jobs/jarvis-daily-run.m
 - `POST /api/mode` toggles `data/mode.json`
 - `POST /api/checkin` appends to `data/manual/log.jsonl` and may update `fitness.json` weight series
 - `POST /api/feedback` appends to `data/feedback.jsonl` (user notes via the `fb:` prompt prefix, plus automatic ask-failure entries)
+- `POST /api/win` appends to `data/wins.jsonl` (the salary-review impact log, via the `win:` prompt prefix). Career data: stripped whole from work mode, panel is `career-only`.
 - Everything else in `data/` is read-only to the app.
+
+`/api/data` additionally serves `wins` (last 50), `metrics` (last 14 lines of metrics.jsonl, career pipeline key removed in work mode) and `evolution` (evolution.json; its `summary` must always be work-safe).
 
 ## Self-evolution (binding)
 

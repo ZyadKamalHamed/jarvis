@@ -381,6 +381,28 @@ body[data-mode="work"] .stealth-dot { display: inline-block; }
   .career-grid { grid-template-columns: 1fr; }
   .pick { border-right: none; padding-right: 0; border-bottom: 1px dashed var(--faint); padding-bottom: 12px; }
   .rail-mid { display: none; }
+
+  /* Phone pass: tighter chrome, smaller reactor, calmer type */
+  .hud { gap: 10px; padding: 10px 12px 130px; }
+  .panel { padding: 12px 14px; }
+  .rail { padding: 10px 14px; }
+  .wordmark { font-size: 15px; }
+  #clock-time { font-size: 17px; }
+  #clock-date { font-size: 9px; letter-spacing: .14em; }
+  .headline { font-size: 16px; line-height: 1.35; }
+  #reactor { width: 160px; }
+  .core-stats { grid-template-columns: 1fr 1fr; gap: 4px 14px; }
+  .terminal { flex-wrap: wrap; gap: 8px; padding: 10px 12px; }
+  #ask-input { flex: 1 1 100%; order: -1; padding: 4px 0; }
+  .player { padding-left: 10px; margin-left: auto; }
+  .answer { left: 12px; right: 12px; width: auto; transform: none; bottom: 116px; }
+}
+@media (max-width: 480px) {
+  .player-track { display: none; }
+  .speak-toggle { letter-spacing: .06em; }
+  .rail-right { gap: 10px; }
+  .boot-title { font-size: 26px; }
+  .boot-log { font-size: 10px; }
 }
 
 /* ---------- Reduced motion ---------- */
