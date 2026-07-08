@@ -182,14 +182,17 @@ function renderBriefing() {
     typewrite(head, b.headline || '')
   }
   const pcls = p => (p === 'high' ? 'p-high' : p === 'medium' ? 'p-med' : '')
-  feed.innerHTML = (b.sections || []).map(s => `
+  const overnight = DATA.evolution?.changed && DATA.evolution.summary
+    ? `<div class="overnight">WHILE YOU SLEPT: ${esc(DATA.evolution.summary)}</div>`
+    : ''
+  feed.innerHTML = ((b.sections || []).map(s => `
     <div class="feed-item ${pcls(s.priority)}">
       <div class="feed-rail"></div>
       <div>
         <div class="feed-title">${esc(s.title)}<span class="mod">${esc(s.module)}</span></div>
         <div class="feed-body">${esc(s.body)}</div>
       </div>
-    </div>`).join('') || '<p class="empty">Nothing needs your attention. Suspicious, but pleasant.</p>'
+    </div>`).join('') || '<p class="empty">Nothing needs your attention. Suspicious, but pleasant.</p>') + overnight
 }
 
 function renderCore() {
@@ -224,6 +227,21 @@ function renderComms() {
     const cls = p.status === 'ok' ? 'ok' : p.status === 'error' ? 'err' : 'warn'
     return `<div><span class="led ${cls}"></span><b>${esc(p.name)}</b> ${esc(p.note || p.status)}</div>`
   }).join('') || '<div>No pipeline telemetry.</div>'
+  renderTrend()
+}
+
+function renderTrend() {
+  const box = $('#system-trend')
+  const days = DATA.metrics || []
+  if (days.length < 2) { box.innerHTML = ''; return }
+  const cells = days.map(m => {
+    const statuses = Object.values(m.pipelines || {})
+    const worst = statuses.includes('error') ? 'err' : statuses.every(s => s === 'ok') ? 'ok' : 'warn'
+    const bad = Object.entries(m.pipelines || {}).filter(([, s]) => s !== 'ok').map(([k, s]) => `${k}: ${s}`).join(', ')
+    const day = new Date(m.at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })
+    return `<i class="trend-cell ${worst}" title="${esc(day)}${bad ? ' | ' + esc(bad) : ' | all ok'}"></i>`
+  }).join('')
+  box.innerHTML = `<span class="trend-label">${days.length}D</span>${cells}`
 }
 
 function renderCareer() {

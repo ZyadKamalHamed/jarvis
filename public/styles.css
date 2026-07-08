@@ -354,6 +354,19 @@ body.speaking .r-core { animation: none; }
 .answer-body { color: #cdeefb; font-size: 14.5px; line-height: 1.55; font-weight: 500; white-space: pre-wrap; }
 .answer-body .cursor { display: inline-block; width: 8px; height: 15px; background: var(--cyan); animation: breathe 1s infinite; vertical-align: -2px; }
 
+/* Trend strip + overnight report */
+.trend { display: flex; align-items: center; gap: 3px; margin-top: 10px; }
+.trend-label { font-family: var(--font-mono); font-size: 9.5px; color: var(--dim); letter-spacing: .14em; margin-right: 5px; }
+.trend-cell { display: inline-block; width: 12px; height: 12px; border-radius: 2px; background: var(--faint); }
+.trend-cell.ok { background: var(--green); opacity: .75; }
+.trend-cell.warn { background: var(--amber); opacity: .8; }
+.trend-cell.err { background: var(--red); opacity: .85; box-shadow: 0 0 5px var(--red); }
+.overnight {
+  margin-top: 12px; padding: 8px 10px; border-left: 2px solid var(--cyan);
+  background: rgba(23,212,254,.05);
+  font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .08em; color: var(--cyan-soft);
+}
+
 /* ---------- Stealth ---------- */
 body[data-mode="work"] .career-only { display: none; }
 body[data-mode="work"] .stealth-dot { display: inline-block; }
