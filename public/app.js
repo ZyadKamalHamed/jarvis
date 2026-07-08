@@ -450,26 +450,78 @@ $('#ask-input').addEventListener('keydown', e => {
 })
 $('#answer-close').addEventListener('click', () => { $('#answer').hidden = true })
 
-// mic: Web Speech API (Chrome), push to talk
+// mic: Web Speech API (Chrome). Click to talk, click again (or go quiet
+// for a couple of seconds) to send. Chrome likes to end the session at the
+// first breath, so we run continuous and restart it behind the scenes.
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition
 if (SR) {
   const rec = new SR()
   rec.lang = 'en-AU'
-  rec.interimResults = false
+  rec.continuous = true
+  rec.interimResults = true
   let live = false
-  $('#mic').addEventListener('click', () => {
-    if (live) { rec.stop(); return }
-    live = true
-    $('#mic').classList.add('live')
-    rec.start()
-  })
-  rec.onresult = e => {
-    const text = e.results[0][0].transcript
-    $('#ask-input').value = text
-    ask(text)
+  let finalText = ''
+  let silenceTimer = null
+  const SILENCE_MS = 2200
+
+  function submitDictation() {
+    const text = ($('#ask-input').value || finalText).trim()
+    stopDictation()
+    if (text) {
+      $('#ask-input').value = text
+      ask(text)
+      $('#ask-input').value = ''
+    }
   }
-  rec.onend = () => { live = false; $('#mic').classList.remove('live') }
-  rec.onerror = () => { live = false; $('#mic').classList.remove('live') }
+
+  function stopDictation() {
+    live = false
+    clearTimeout(silenceTimer)
+    $('#mic').classList.remove('live')
+    try { rec.stop() } catch { /* already stopped */ }
+  }
+
+  $('#mic').addEventListener('click', () => {
+    if (live) { submitDictation(); return }
+    live = true
+    finalText = ''
+    $('#ask-input').value = ''
+    $('#ask-input').placeholder = 'Listening, sir...'
+    $('#mic').classList.add('live')
+    try { rec.start() } catch { /* start() while pending throws; ignore */ }
+  })
+
+  rec.onresult = e => {
+    if (!live) return
+    let interim = ''
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const r = e.results[i]
+      if (r.isFinal) finalText += r[0].transcript
+      else interim += r[0].transcript
+    }
+    $('#ask-input').value = (finalText + interim).trim()
+    clearTimeout(silenceTimer)
+    if ((finalText + interim).trim()) silenceTimer = setTimeout(submitDictation, SILENCE_MS)
+  }
+
+  // Chrome ends continuous sessions on its own schedule; while the mic is
+  // meant to be live, quietly start a new one and keep the transcript.
+  rec.onend = () => {
+    if (live) {
+      try { rec.start() } catch { stopDictation() }
+    } else {
+      $('#ask-input').placeholder = 'Ask me anything, sir.'
+    }
+  }
+  rec.onerror = e => {
+    if (e.error === 'no-speech' || e.error === 'aborted') return // onend handles the restart
+    stopDictation()
+    $('#ask-input').placeholder = e.error === 'not-allowed' ? 'Mic blocked in browser settings.' : 'Ask me anything, sir.'
+  }
+
+  addEventListener('keydown', e => {
+    if (e.key === 'Escape' && live) { $('#ask-input').value = ''; finalText = ''; stopDictation() }
+  })
 } else {
   $('#mic').disabled = true
   $('#mic').title = 'Speech recognition needs Chrome'
