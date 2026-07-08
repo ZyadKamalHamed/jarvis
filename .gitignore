@@ -1,0 +1,12 @@
+.env
+.cache/
+public/assets/boot.mp3
+public/assets/briefing-*
+node_modules/
+.DS_Store
+.venv-jarvis/
+
+# Runtime state, regenerated daily by the agents. Never in git history:
+# emails.json and the AIOS mirror carry personal and career data, and this
+# repo may be visible at work. Schemas live in CLAUDE.md.
+data/

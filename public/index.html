@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>J.A.R.V.I.S.</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Rajdhani:wght@400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='13' fill='none' stroke='%2317d4fe' stroke-width='2'/><circle cx='16' cy='16' r='6' fill='%2317d4fe'/></svg>">
+</head>
+<body data-mode="full">
+
+<canvas id="particles" aria-hidden="true"></canvas>
+<div class="grid-overlay" aria-hidden="true"></div>
+<div class="scanlines" aria-hidden="true"></div>
+
+<!-- Boot overlay -->
+<div id="boot" class="boot">
+  <div class="boot-inner">
+    <svg class="boot-reactor" viewBox="0 0 200 200" aria-hidden="true">
+      <circle class="br-outer" cx="100" cy="100" r="86" />
+      <circle class="br-seg" cx="100" cy="100" r="70" />
+      <circle class="br-prog" cx="100" cy="100" r="54" />
+      <circle class="br-core" cx="100" cy="100" r="22" />
+    </svg>
+    <h1 class="boot-title">J.A.R.V.I.S.</h1>
+    <p class="boot-sub">Just A Rather Very Intelligent System</p>
+    <pre id="boot-log" class="boot-log" aria-live="polite"></pre>
+    <button id="boot-init" class="boot-init">INITIALISE</button>
+    <button id="boot-skip" class="boot-skip">skip sequence</button>
+  </div>
+</div>
+
+<!-- Status rail -->
+<header class="rail">
+  <div class="wordmark" id="wordmark" title="">J.A.R.V.I.S.</div>
+  <div class="rail-mid">
+    <span class="rail-item" id="rail-freshness">DATA <b id="freshness">--</b></span>
+    <span class="rail-item" id="rail-pipelines"></span>
+    <span class="rail-item stealth-dot" id="stealth-dot" hidden>W</span>
+  </div>
+  <div class="rail-right">
+    <button class="rail-btn" id="audio-toggle" title="Sound">SND ON</button>
+    <div class="clock">
+      <span id="clock-time">--:--</span>
+      <span id="clock-date">SYDNEY</span>
+    </div>
+  </div>
+</header>
+
+<main class="hud" id="hud">
+
+  <section class="panel span5" id="panel-briefing">
+    <header class="panel-head">
+      <h2>Priority feed</h2>
+      <div class="head-tools">
+        <button class="chip-btn" id="speak-briefing">SPEAK</button>
+        <span class="chip" id="briefing-date"></span>
+      </div>
+    </header>
+    <p class="headline" id="briefing-headline"></p>
+    <div class="feed" id="briefing-feed"></div>
+  </section>
+
+  <section class="panel span3 core" id="panel-core">
+    <svg id="reactor" viewBox="0 0 220 220" aria-label="Arc reactor">
+      <g class="r-spin-slow">
+        <circle class="r-outer" cx="110" cy="110" r="100"/>
+        <g id="r-ticks"></g>
+      </g>
+      <g class="r-spin-rev"><circle class="r-seg" cx="110" cy="110" r="82"/></g>
+      <circle class="r-track" cx="110" cy="110" r="64"/>
+      <circle class="r-day" id="r-day" cx="110" cy="110" r="64"/>
+      <circle class="r-inner" cx="110" cy="110" r="44"/>
+      <circle class="r-core" id="r-core" cx="110" cy="110" r="26"/>
+    </svg>
+    <div class="core-caption">
+      <span class="core-label">DAY CYCLE</span>
+      <span class="core-value" id="day-cycle">--%</span>
+    </div>
+    <div class="core-stats" id="core-stats"></div>
+  </section>
+
+  <section class="panel span4" id="panel-comms">
+    <header class="panel-head"><h2>Comms</h2><span class="chip" id="comms-chip"></span></header>
+    <div id="comms-accounts"></div>
+    <header class="panel-head sub"><h2>System</h2></header>
+    <div id="system-lines" class="sys"></div>
+  </section>
+
+  <section class="panel span6 career-only" id="panel-career">
+    <header class="panel-head"><h2>Career ops</h2><span class="chip" id="career-chip"></span></header>
+    <div class="career-grid">
+      <div class="pick" id="career-pick"></div>
+      <div class="career-side">
+        <div class="statrow" id="career-stats"></div>
+        <div class="windows" id="career-windows"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel span6" id="panel-uni">
+    <header class="panel-head"><h2>University</h2><span class="chip" id="uni-chip"></span></header>
+    <div id="uni-body"></div>
+  </section>
+
+  <section class="panel span4" id="panel-study">
+    <header class="panel-head"><h2>Study matrix</h2><span class="chip" id="study-chip"></span></header>
+    <div id="study-body"></div>
+  </section>
+
+  <section class="panel span4" id="panel-fitness">
+    <header class="panel-head"><h2>Fitness</h2><span class="chip" id="fitness-chip"></span></header>
+    <div id="fitness-body"></div>
+  </section>
+
+  <section class="panel span4" id="panel-work">
+    <header class="panel-head"><h2>Work ops</h2><span class="chip" id="work-chip"></span></header>
+    <div id="work-body"></div>
+  </section>
+
+</main>
+
+<div id="answer" class="answer" hidden>
+  <div class="answer-head"><span>JARVIS</span><button id="answer-close">×</button></div>
+  <div id="answer-body" class="answer-body"></div>
+</div>
+
+<footer class="terminal">
+  <button id="mic" class="mic" title="Push to talk">MIC</button>
+  <span class="prompt">jarvis&gt;</span>
+  <input id="ask-input" autocomplete="off" spellcheck="false" placeholder="Ask me anything, sir." title="Prefix with fb: to file an improvement request for the nightly evolve run">
+  <label class="speak-toggle"><input type="checkbox" id="speak-answers"> voice</label>
+</footer>
+
+<audio id="boot-audio" src="/assets/boot.mp3" preload="auto"></audio>
+
+<script src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,66 @@
+# JARVIS - Zyad's Life Operating System
+
+The Iron Man style daily dashboard. A folder of JSON data files owned by a scheduled morning agent, plus a dependency-free local web app (`server.mjs` + `public/`) that renders them as a cinematic HUD. Data files are the single source of truth; the dashboard is a view.
+
+JARVIS wraps and extends AIOS (`~/Coding/AIOS`), which remains the career module's source of truth. Never write to AIOS from here; read `~/Coding/AIOS/data/aios-data.json` only.
+
+## Run
+
+```bash
+node server.mjs          # http://localhost:4777
+JARVIS_PORT=5000 node server.mjs   # alternate port
+```
+
+No npm install. Node 18+. Zero dependencies by design (Node 25 + Turbopack burned us in AIOS; see its CLAUDE.md).
+
+## Data contract (load-bearing)
+
+Everything under `data/` is written by the daily agent (`jobs/jarvis-daily-run.md`) or by the app's narrow write paths. All writes are atomic (tmp file + rename). Extend schemas backwards-compatibly only.
+
+- `data/briefing.json`: the morning briefing. `{ generatedAt, date, greeting, headline, workHeadline, sections: [{id, module, title, body, priority}], voiceScript, workVoiceScript, audioFile }`. `module` is one of `career | uni | study | fitness | work | email | general`. `voiceScript` is what JARVIS speaks; keep it under 120 seconds read aloud. `workHeadline` and `workVoiceScript` are the career-free variants served in work mode; nothing career-related may appear in ANY non-career-tagged field, including the general section.
+- `data/uni.json`: `{ updatedAt, semester, subjects[], assignments: [{id, subject, title, due, progressPct, status, source, nextAction, flags[]}], exams[], flags[] }`
+- `data/study.json`: spaced repetition state. `{ updatedAt, queue: [{noteId, title, path, due, stability, retrievability}], stats: {reviewsToday, streak}, upcoming[] }`. FSRS scheduling state itself lives in `data/fsrs-state.json`, owned by `bin/study.py`.
+- `data/fitness.json`: `{ updatedAt, source, weight: {currentKg, goalKg, trend7d, series[]}, nutrition: {todayKcal, targetKcal, proteinG, carbsG, fatG}, training: {program, weekSessions, lastSession, prs[]} }`
+- `data/work.json`: `{ updatedAt, projects: [{client, name, status, nextMilestone}], inbox: {unread, flagged[]}, chatHighlights[], today[] }`
+- `data/emails.json`: `{ updatedAt, accounts: [{address, label, connected, unread, topThreads: [{from, subject, summary, urgency}]}] }`
+- `data/system.json`: pipeline health. `{ pipelines: [{id, name, lastRun, status, note}] }`
+- `data/mode.json`: `{ mode: "full" | "work" }`. Stealth switch, written by the app only.
+- `data/manual/log.jsonl`: append-only quick check-ins from the app (weight, workout done, review done).
+- Career data: read live from `~/Coding/AIOS/data/aios-data.json` (contract documented in AIOS CLAUDE.md). READ ONLY.
+
+## Stealth mode (binding)
+
+`mode: "work"` must strip every trace of the job hunt SERVER SIDE before data leaves `/api/data`: the career module, career briefing sections, career voice lines, and jobhunt email accounts. The client never receives career data in work mode, so nothing can leak via devtools. The toggle in the UI is deliberately unlabelled (5 rapid clicks on the JARVIS wordmark, or Ctrl+Shift+J). `?work=1` on the URL forces work mode for the session regardless of mode.json.
+
+## App write paths (the only ones)
+
+- `POST /api/mode` toggles `data/mode.json`
+- `POST /api/checkin` appends to `data/manual/log.jsonl` and may update `fitness.json` weight series
+- `POST /api/feedback` appends to `data/feedback.jsonl` (user notes via the `fb:` prompt prefix, plus automatic ask-failure entries)
+- Everything else in `data/` is read-only to the app.
+
+## Self-evolution (binding)
+
+The system improves itself nightly via `jobs/jarvis-evolve.md` (9:30pm agent): read signals (`data/feedback.jsonl`, `data/metrics.jsonl`, `data/system.json`, `docs/BACKLOG.md`), make ONE small improvement, verify, commit, report via `data/evolution.json` which the morning briefing surfaces as "While you slept".
+
+- This directory is a git repo. Every change, human or agent, must pass `node bin/selfcheck.mjs` before commit. Selfcheck boots a throwaway server on port 4779 and fails on any career leak in the work-mode payload; the banned-terms list may be extended, never trimmed.
+- `data/` is gitignored on purpose: runtime state carries personal and career content and this repo may be seen at work. Never force-add data files.
+- The evolve agent may strengthen stealth, never relax it. It never touches `.env`, `.cache/`, AIOS, or adds dependencies.
+- `docs/BACKLOG.md` is the improvement queue; `data/metrics.jsonl` is append-only telemetry written by the daily run.
+
+## Hard rules
+
+- Australian English in UI copy. No em dashes anywhere: not in copy, code, comments or data.
+- No fabricated data. Modules with no real feed yet render their `source: "sample"` state honestly with a SETUP badge.
+- Briefings never invent facts. Unverifiable claims get dropped, not guessed.
+- The boot audio (`public/assets/boot.mp3`, gitignored) is user-supplied. The app must boot cleanly without it.
+- Never auto-send anything (email, chat, applications) from this system. Telegram notification of "briefing ready" via OpenClaw is the only outbound push.
+
+## Voice
+
+- `POST /api/tts {text}` returns audio. Uses ElevenLabs streaming when `ELEVENLABS_API_KEY` is set (env or `.env` file), else falls back to macOS `say`. Responses cached in `.cache/tts/` by content hash.
+- `POST /api/ask {question}` shells out to `claude -p` (Zyad's subscription, no API fees) with the mode-filtered data snapshot as context. Serialised, one at a time.
+
+## Daily run
+
+`jobs/jarvis-daily-run.md` defines the 7:30am agent: refresh every module JSON, write the briefing, pre-render briefing audio if a key is present, ping Telegram via OpenClaw. AIOS's own 7:00am run happens first; JARVIS consumes its output and never duplicates its job scanning.
