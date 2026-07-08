@@ -85,6 +85,8 @@ async function main() {
       if (blob.includes(term)) fail(`work-mode payload leaks banned term: "${term}"`)
     }
     if ((work.emails?.accounts || []).some(a => a.jobhunt)) fail('jobhunt account present in work mode')
+    if (work.wins != null) fail('wins (impact log) present in work mode')
+    if ((work.metrics || []).some(m => m.pipelines && 'career' in m.pipelines)) fail('career pipeline in work-mode metrics')
     note('work-mode payload is clean (' + BANNED.length + ' banned terms checked)')
 
     const fb = await fetch(BASE + '/api/feedback', {

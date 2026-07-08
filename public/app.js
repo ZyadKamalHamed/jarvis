@@ -265,6 +265,24 @@ function renderCareer() {
   $('#career-windows').innerHTML = (c.today?.windows || []).slice(0, 5).map(w =>
     `<div class="win"><span class="what">${esc(w.what)}</span><span class="when">${esc(w.when)}</span></div>`).join('')
     || '<p class="empty">No closing windows logged.</p>'
+  renderWins()
+}
+
+function renderWins() {
+  const box = $('#career-wins')
+  const w = DATA.wins
+  if (!w?.count) {
+    box.innerHTML = '<header class="panel-head sub"><h2>Impact log</h2><span class="chip">0 ON RECORD</span></header>' +
+      '<p class="empty">Log review ammunition as it happens: type win: followed by what you did.</p>'
+    return
+  }
+  box.innerHTML = `
+    <header class="panel-head sub"><h2>Impact log</h2><span class="chip ok">${w.count} ON RECORD</span></header>
+    ${w.entries.slice(-4).reverse().map(e => `
+      <div class="list-line">
+        <span class="l">${esc(e.text)}</span>
+        <span class="r">${new Date(e.at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}</span>
+      </div>`).join('')}`
 }
 
 function renderUni() {
@@ -426,6 +444,19 @@ async function ask(question) {
   if ($('#speak-answers').checked && j.ok) speak(answer)
 }
 
+async function sendWin(text) {
+  const panel = $('#answer'), body = $('#answer-body')
+  panel.hidden = false
+  const res = await fetch('/api/win', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text }),
+  })
+  const j = res.ok ? await res.json() : null
+  body.innerHTML = ''
+  await typewrite(body, j?.ok
+    ? `Logged, sir. That makes ${j.total} on the record for the review.`
+    : 'The win did not save. Ironic.', 6)
+}
+
 async function sendFeedback(text) {
   const panel = $('#answer'), body = $('#answer-body')
   panel.hidden = false
@@ -442,7 +473,9 @@ $('#ask-input').addEventListener('keydown', e => {
   if (e.key === 'Enter' && e.target.value.trim()) {
     const text = e.target.value.trim()
     const fb = text.match(/^(?:fb|feedback):\s*(.+)/i)
+    const win = text.match(/^win:\s*(.+)/i)
     if (fb) sendFeedback(fb[1])
+    else if (win) sendWin(win[1])
     else ask(text)
     e.target.value = ''
   }

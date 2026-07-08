@@ -74,10 +74,27 @@ async function currentMode(url) {
   return m.mode === 'work' ? 'work' : 'full'
 }
 
+async function readJsonl(file, limit) {
+  try {
+    const lines = (await fsp.readFile(file, 'utf8')).trim().split('\n').filter(Boolean)
+    return { count: lines.length, entries: lines.slice(-limit).map(l => JSON.parse(l)) }
+  } catch {
+    return null
+  }
+}
+
 function stripCareer(payload) {
   // Server-side stealth: no career data may leave the process in work mode.
   const out = { ...payload }
   delete out.career
+  delete out.wins // the impact log is review ammunition, career by definition
+  if (out.metrics) {
+    out.metrics = out.metrics.map(m => {
+      const pipelines = { ...(m.pipelines || {}) }
+      delete pipelines.career
+      return { ...m, pipelines }
+    })
+  }
   if (out.briefing) {
     const sections = (out.briefing.sections || []).filter(s => s.module !== 'career')
     out.briefing = {
@@ -113,6 +130,9 @@ async function aggregate(mode) {
     })
   )
   payload.career = await readJson(AIOS_DATA)
+  payload.wins = await readJsonl(path.join(DATA, 'wins.jsonl'), 50)
+  payload.metrics = (await readJsonl(path.join(DATA, 'metrics.jsonl'), 14))?.entries || null
+  payload.evolution = await readJson(path.join(DATA, 'evolution.json'))
   return mode === 'work' ? stripCareer(payload) : payload
 }
 
@@ -388,6 +408,16 @@ const server = http.createServer(async (req, res) => {
     }
     if (url.pathname === '/api/music' && req.method === 'GET') {
       return json(res, 200, await listMusic())
+    }
+    if (url.pathname === '/api/win' && req.method === 'POST') {
+      const body = await readBody(req)
+      if (!body.text) return json(res, 400, { error: 'text required' })
+      await fsp.appendFile(
+        path.join(DATA, 'wins.jsonl'),
+        JSON.stringify({ at: new Date().toISOString(), text: String(body.text).slice(0, 500) }) + '\n'
+      )
+      const total = (await readJsonl(path.join(DATA, 'wins.jsonl'), 1))?.count || 1
+      return json(res, 200, { ok: true, total })
     }
     if (url.pathname === '/api/feedback' && req.method === 'POST') {
       const body = await readBody(req)
