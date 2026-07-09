@@ -13,3 +13,4 @@ node_modules/
 data/
 drafts/
 .claude/settings.local.json
+bin/__pycache__/
