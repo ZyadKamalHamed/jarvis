@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Read",
+      "Glob",
+      "Grep",
+      "WebSearch",
+      "WebFetch(domain:*)",
+      "Write(drafts/**)",
+      "Edit(drafts/**)",
+      "Bash(python3 bin/*)",
+      "Bash(.venv-jarvis/bin/python bin/*)",
+      "Bash(node bin/selfcheck.mjs)",
+      "Bash(open https://*)",
+      "Bash(curl -sI *)",
+      "Bash(curl -s http://127.0.0.1:4777/*)",
+      "Bash(date*)",
+      "Bash(ls *)"
+    ],
+    "deny": [
+      "Read(.env)",
+      "Read(**/.env)",
+      "Read(.cache/**)",
+      "Read(//Users/Zyad/Coding/AIOS/.env)",
+      "Read(//Users/Zyad/Coding/AIOS/.cache/**)"
+    ]
+  }
+}

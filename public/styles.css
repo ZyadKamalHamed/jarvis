@@ -367,6 +367,38 @@ body.speaking .r-core { animation: none; }
   font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .08em; color: var(--cyan-soft);
 }
 
+/* Briefing actions + proposals */
+.feed-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
+.act-btn {
+  background: rgba(23,212,254,.06); border: 1px solid var(--hairline); color: var(--cyan-soft);
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: .14em;
+  padding: 4px 9px; cursor: pointer; text-transform: uppercase;
+}
+.act-btn:hover { color: var(--cyan); border-color: var(--cyan); background: rgba(23,212,254,.14); }
+.act-btn:disabled { opacity: .4; cursor: default; }
+.act-btn.yes { color: var(--green); border-color: rgba(72,229,163,.45); background: rgba(72,229,163,.07); }
+.act-btn.yes:hover { border-color: var(--green); background: rgba(72,229,163,.15); }
+.proposal {
+  margin-top: 12px; padding: 10px 12px; border: 1px dashed rgba(72,229,163,.4);
+  background: rgba(72,229,163,.04);
+}
+.prop-title { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .16em; color: var(--green); margin-bottom: 4px; }
+.prop-sum { color: #cdeefb; font-size: 13.5px; line-height: 1.5; }
+
+/* Conversation log overlay */
+.convo {
+  position: fixed; bottom: 64px; left: 50%; transform: translateX(-50%);
+  width: min(760px, 92vw); max-height: 60vh; z-index: 30;
+  background: rgba(6, 16, 26, .97); border: 1px solid var(--hairline); clip-path: var(--notch);
+  padding: 14px 18px; display: flex; flex-direction: column;
+}
+.convo-body { overflow-y: auto; }
+.convo-row { padding: 8px 0; border-bottom: 1px dashed var(--faint); }
+.convo-q { color: var(--cyan-soft); font-size: 13px; font-weight: 600; display: flex; justify-content: space-between; gap: 10px; }
+.convo-at { color: var(--dim); font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .1em; white-space: nowrap; }
+.convo-a { color: #cdeefb; font-size: 13.5px; line-height: 1.5; margin-top: 3px; white-space: pre-wrap; }
+.draft-pre { white-space: pre-wrap; font-family: var(--font-mono); font-size: 12px; line-height: 1.6; color: #cdeefb; margin: 0; }
+
 /* ---------- Stealth ---------- */
 body[data-mode="work"] .career-only { display: none; }
 body[data-mode="work"] .stealth-dot { display: inline-block; }
@@ -396,6 +428,7 @@ body[data-mode="work"] .stealth-dot { display: inline-block; }
   #ask-input { flex: 1 1 100%; order: -1; padding: 4px 0; }
   .player { padding-left: 10px; margin-left: auto; }
   .answer { left: 12px; right: 12px; width: auto; transform: none; bottom: 116px; }
+  .convo { left: 12px; right: 12px; width: auto; transform: none; bottom: 116px; max-height: 52vh; }
 }
 @media (max-width: 480px) {
   .player-track { display: none; }

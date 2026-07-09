@@ -185,15 +185,87 @@ function renderBriefing() {
   const overnight = DATA.evolution?.changed && DATA.evolution.summary
     ? `<div class="overnight">WHILE YOU SLEPT: ${esc(DATA.evolution.summary)}</div>`
     : ''
+  const actionRow = s => {
+    const btns = (s.actions || []).map(a => {
+      if (a.url) return `<button class="act-btn" data-url="${esc(a.url)}">${esc(a.label || 'OPEN')} &#8599;</button>`
+      if (a.draft) return `<button class="act-btn" data-draft="${esc(a.draft)}">${esc(a.label || 'VIEW DRAFT')}</button>`
+      return ''
+    }).join('')
+    return btns ? `<div class="feed-actions">${btns}</div>` : ''
+  }
   feed.innerHTML = ((b.sections || []).map(s => `
     <div class="feed-item ${pcls(s.priority)}">
       <div class="feed-rail"></div>
       <div>
         <div class="feed-title">${esc(s.title)}<span class="mod">${esc(s.module)}</span></div>
         <div class="feed-body">${esc(s.body)}</div>
+        ${actionRow(s)}
       </div>
     </div>`).join('') || '<p class="empty">Nothing needs your attention. Suspicious, but pleasant.</p>') + overnight
+  renderProposals()
 }
+
+function renderProposals() {
+  const box = $('#proposals')
+  const open = (DATA.proposals || []).filter(p => !p.status)
+  box.innerHTML = open.map(p => `
+    <div class="proposal">
+      <div class="prop-title">PROPOSAL: ${esc(p.title)}</div>
+      <div class="prop-sum">${esc(p.summary || '')}</div>
+      <div class="feed-actions">
+        <button class="act-btn yes" data-prop="${esc(p.id)}" data-dec="accept">YES, BAKE IT IN</button>
+        <button class="act-btn" data-prop="${esc(p.id)}" data-dec="later">LATER</button>
+      </div>
+    </div>`).join('')
+}
+
+// The Mac the server runs on opens tabs itself; a phone on the tailnet
+// opens them locally instead. serverOnly suppresses remote fallback so the
+// morning auto-open never sprays tabs on a machine you are not in front of.
+function openTarget(url, serverOnly) {
+  const local = ['localhost', '127.0.0.1'].includes(location.hostname)
+  if (local) {
+    fetch('/api/open', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ url }) }).catch(() => {})
+  } else if (!serverOnly) {
+    window.open(url, '_blank', 'noopener')
+  }
+}
+
+function autoOpenActions() {
+  if (document.body.dataset.mode === 'work') return
+  const acts = (DATA?.briefing?.sections || []).flatMap(s => s.actions || []).filter(a => a.autoOpen && a.url)
+  for (const a of acts) openTarget(a.url, true)
+}
+
+async function showDraft(name) {
+  const panel = $('#answer'), body = $('#answer-body')
+  panel.hidden = false
+  body.textContent = 'Fetching draft...'
+  try {
+    const j = await (await fetch('/api/draft?file=' + encodeURIComponent(name))).json()
+    body.innerHTML = `<pre class="draft-pre">${esc(j.text || j.error || 'No draft.')}</pre>`
+  } catch {
+    body.textContent = 'Draft unavailable.'
+  }
+}
+
+document.addEventListener('click', async e => {
+  const t = e.target.closest('.act-btn')
+  if (!t) return
+  if (t.dataset.url) openTarget(t.dataset.url)
+  else if (t.dataset.draft) showDraft(t.dataset.draft)
+  else if (t.dataset.prop) {
+    t.disabled = true
+    try {
+      const r = await fetch('/api/proposal', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ id: t.dataset.prop, decision: t.dataset.dec }),
+      })
+      if (r.ok && t.dataset.dec === 'accept') speak('Done. It is in the daily plan from tomorrow, sir.')
+      fetchData()
+    } catch { t.disabled = false }
+  }
+})
 
 function renderCore() {
   const c = DATA.career, u = DATA.uni, st = DATA.study, f = DATA.fitness
@@ -617,7 +689,38 @@ $('#audio-toggle').addEventListener('click', () => {
 $('#speak-briefing').addEventListener('click', () => {
   if (currentSpeech) { stopSpeech(); return }
   const script = DATA?.briefing?.voiceScript
-  if (script) speak(script)
+  if (script) {
+    speak(script)
+    autoOpenActions()
+  }
+})
+
+// ---------- conversation log ----------
+
+async function toggleConvo() {
+  const el = $('#convo')
+  if (!el.hidden) { el.hidden = true; return }
+  el.hidden = false
+  const body = $('#convo-body')
+  body.innerHTML = '<p class="empty">Loading the record...</p>'
+  try {
+    const j = await (await fetch('/api/conversations' + (WORK_PARAM ? '?work=1' : ''))).json()
+    const stamp = at => new Date(at).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false })
+    body.innerHTML = (j.entries || []).map(e => `
+      <div class="convo-row">
+        <div class="convo-q">${esc(e.q)}<span class="convo-at">${stamp(e.at)}</span></div>
+        <div class="convo-a">${esc(e.a)}</div>
+      </div>`).join('') || '<p class="empty">No conversations on record yet. Everything we say via the prompt is kept here.</p>'
+    body.scrollTop = body.scrollHeight
+  } catch {
+    body.innerHTML = '<p class="empty">Log unavailable.</p>'
+  }
+}
+
+$('#log-btn').addEventListener('click', toggleConvo)
+$('#convo-close').addEventListener('click', () => { $('#convo').hidden = true })
+addEventListener('keydown', e => {
+  if (e.key === 'Escape' && !$('#convo').hidden) $('#convo').hidden = true
 })
 
 $('#voice-stop').addEventListener('click', stopSpeech)

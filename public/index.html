@@ -2,7 +2,11 @@
 <html lang="en-AU">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="JARVIS">
+<meta name="theme-color" content="#02060d">
 <title>J.A.R.V.I.S.</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -43,6 +47,7 @@
   </div>
   <div class="rail-right">
     <button class="rail-btn silence" id="voice-stop" title="Stop JARVIS speaking (Esc)">SILENCE</button>
+    <button class="rail-btn" id="log-btn" title="Conversation log">LOG</button>
     <button class="rail-btn" id="audio-toggle" title="Sound">SND ON</button>
     <div class="clock">
       <span id="clock-time">--:--</span>
@@ -63,6 +68,7 @@
     </header>
     <p class="headline" id="briefing-headline"></p>
     <div class="feed" id="briefing-feed"></div>
+    <div id="proposals"></div>
   </section>
 
   <section class="panel span3 core" id="panel-core">
@@ -129,6 +135,11 @@
 <div id="answer" class="answer" hidden>
   <div class="answer-head"><span>JARVIS</span><button id="answer-close">×</button></div>
   <div id="answer-body" class="answer-body"></div>
+</div>
+
+<div id="convo" class="convo" hidden>
+  <div class="answer-head"><span>CONVERSATION LOG</span><button id="convo-close">×</button></div>
+  <div id="convo-body" class="convo-body"></div>
 </div>
 
 <footer class="terminal">
