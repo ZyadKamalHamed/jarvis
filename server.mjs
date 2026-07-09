@@ -120,10 +120,12 @@ function stripCareer(payload) {
     }
   }
   if (out.proposals) {
-    out.proposals = out.proposals.filter(p => !p.career)
+    // The flag key itself would leak the word "career" into the payload;
+    // survivors are by definition not career items, so drop the field too.
+    out.proposals = out.proposals.filter(p => !p.career).map(({ career, ...rest }) => rest)
   }
   if (out.todos) {
-    out.todos = out.todos.filter(t => !t.career)
+    out.todos = out.todos.filter(t => !t.career).map(({ career, ...rest }) => rest)
   }
   return out
 }
