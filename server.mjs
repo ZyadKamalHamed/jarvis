@@ -122,6 +122,9 @@ function stripCareer(payload) {
   if (out.proposals) {
     out.proposals = out.proposals.filter(p => !p.career)
   }
+  if (out.todos) {
+    out.todos = out.todos.filter(t => !t.career)
+  }
   return out
 }
 
@@ -137,6 +140,7 @@ async function aggregate(mode) {
   payload.metrics = (await readJsonl(path.join(DATA, 'metrics.jsonl'), 14))?.entries || null
   payload.evolution = await readJson(path.join(DATA, 'evolution.json'))
   payload.proposals = (await readJson(path.join(DATA, 'proposals.json'), [])) || []
+  payload.todos = (await readJson(path.join(DATA, 'todos.json'), [])) || []
   return mode === 'work' ? stripCareer(payload) : payload
 }
 
@@ -527,6 +531,31 @@ const server = http.createServer(async (req, res) => {
       }
       notifyClients()
       return json(res, 200, { ok: true, status: hit.status })
+    }
+    if (url.pathname === '/api/todo' && req.method === 'POST') {
+      const body = await readBody(req)
+      const file = path.join(DATA, 'todos.json')
+      const todos = (await readJson(file, [])) || []
+      const hit = todos.find(t => t.id === body.id)
+      if (!hit) return json(res, 404, { error: 'unknown todo' })
+      if (hit.career && (await currentMode(url)) === 'work') return json(res, 403, { error: 'unavailable in work mode' })
+      hit.done = !!body.done
+      hit.doneAt = hit.done ? new Date().toISOString() : null
+      await writeJsonAtomic(file, todos)
+      notifyClients()
+      return json(res, 200, { ok: true })
+    }
+    if (url.pathname === '/api/doc' && req.method === 'GET') {
+      // Repo docs on the HUD. Blocked in work mode: the handover and plan
+      // files discuss the job hunt in plain words.
+      if ((await currentMode(url)) === 'work') return json(res, 403, { error: 'unavailable in work mode' })
+      const name = String(url.searchParams.get('file') || '')
+      if (!/^[\w.-]+\.md$/.test(name)) return json(res, 400, { error: 'bad doc name' })
+      try {
+        return json(res, 200, { name, text: await fsp.readFile(path.join(ROOT, 'docs', name), 'utf8') })
+      } catch {
+        return json(res, 404, { error: 'doc not found' })
+      }
     }
     if (url.pathname === '/api/draft' && req.method === 'GET') {
       // Drafts are prepared correspondence; treat every one as career-grade.

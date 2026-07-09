@@ -250,10 +250,23 @@ async function showDraft(name) {
 }
 
 document.addEventListener('click', async e => {
+  const tick = e.target.closest('.todo-tick')
+  if (tick) {
+    tick.disabled = true
+    try {
+      await fetch('/api/todo', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ id: tick.dataset.todo, done: true }),
+      })
+      fetchData()
+    } catch { tick.disabled = false }
+    return
+  }
   const t = e.target.closest('.act-btn')
   if (!t) return
   if (t.dataset.url) openTarget(t.dataset.url)
   else if (t.dataset.draft) showDraft(t.dataset.draft)
+  else if (t.dataset.doc) showDoc(t.dataset.doc)
   else if (t.dataset.prop) {
     t.disabled = true
     try {
@@ -300,6 +313,47 @@ function renderComms() {
     return `<div><span class="led ${cls}"></span><b>${esc(p.name)}</b> ${esc(p.note || p.status)}</div>`
   }).join('') || '<div>No pipeline telemetry.</div>'
   renderTrend()
+  renderOps()
+}
+
+function renderOps() {
+  const box = $('#ops-todos')
+  const todos = DATA.todos || []
+  if (!todos.length) { box.innerHTML = ''; return }
+  const open = todos.filter(t => !t.done)
+  const doneCount = todos.length - open.length
+  const pOrder = { high: 0, medium: 1, low: 2 }
+  open.sort((a, b) => (pOrder[a.priority] ?? 3) - (pOrder[b.priority] ?? 3))
+  const row = t => `
+    <div class="todo ${t.priority === 'high' ? 'p-high' : ''}">
+      <button class="todo-tick" data-todo="${esc(t.id)}" title="Mark done">&#10003;</button>
+      <div class="todo-main">
+        <div class="todo-title">${esc(t.title)}</div>
+        <div class="todo-detail">${esc(t.detail || '')}</div>
+        <div class="feed-actions">
+          ${t.doc ? `<button class="act-btn" data-doc="${esc(t.doc)}">GUIDE: ${esc(t.doc)}</button>` : ''}
+          ${t.url ? `<button class="act-btn" data-url="${esc(t.url)}">OPEN &#8599;</button>` : ''}
+        </div>
+      </div>
+    </div>`
+  box.innerHTML = `
+    <header class="panel-head sub"><h2>Operator tasks</h2>
+      <span class="chip ${open.length ? 'warn' : 'ok'}">${open.length ? open.length + ' OPEN' : 'ALL CLEAR'}</span>
+    </header>
+    ${open.map(row).join('') || '<p class="empty">Nothing on you right now. The machines have the rest.</p>'}
+    ${doneCount ? `<div class="todo-donecount">${doneCount} done and archived in the file</div>` : ''}`
+}
+
+async function showDoc(name) {
+  const panel = $('#answer'), body = $('#answer-body')
+  panel.hidden = false
+  body.textContent = 'Fetching guide...'
+  try {
+    const j = await (await fetch('/api/doc?file=' + encodeURIComponent(name))).json()
+    body.innerHTML = `<pre class="draft-pre">${esc(j.text || j.error || 'No doc.')}</pre>`
+  } catch {
+    body.textContent = 'Guide unavailable.'
+  }
 }
 
 function renderTrend() {

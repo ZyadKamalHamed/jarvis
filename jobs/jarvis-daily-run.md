@@ -35,6 +35,7 @@ Read `data/schedule.json` (his fixed shape: work 9:00 to 17:30, gym after work, 
 - **Lunch (optional, 20 min):** only assign when something is time-critical.
 - **Train home (about 20 min):** second drill slot or overflow.
 - **Evening block after the gym (one task, 1 to 3 hours, roughly 19:45 onward):** the single highest-priority item tonight, with the runner-up named so he can consciously trade. Career deadlines beat uni work unless a submission is due within 48 hours; a due-tonight submission beats everything.
+- **Weekends:** also read `data/todos.json` and fold the open operator tasks into the plan (they are his own system-upkeep reminders; high priority ones get named slots, the rest get a mention). Tick nothing yourself; only he marks them done.
 
 Stealth split (binding): career tasks go in a `module: "career"` section (title "Career ops today"); the work-safe remainder (uni, gym, study, chores) goes in `module: "general"` (title "Day plan"). A single mixed section is a stealth leak and a selfcheck failure.
 
