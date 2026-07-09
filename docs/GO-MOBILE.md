@@ -16,7 +16,7 @@ Already scripted:
 bash bin/go-mobile.sh
 ```
 
-Then on the iPhone: App Store, install **Tailscale**, sign in with the same account (zyadschneider24@gmail.com), toggle the VPN on, open the URL the script printed (https://<machine>.tail70b7c5.ts.net:8443) in Safari, Share, **Add to Home Screen**. The HUD installs like an app, full screen, JARVIS icon in the dock of your life. Caveat until the home laptop takes over: it works while this Mac is awake.
+Then on the iPhone: App Store, install **Tailscale**, sign in with the same account the Mac is logged in with (currently the GitHub-linked ZyadKamalHamed account, tailnet tailb73e19.ts.net), toggle the VPN on, open the URL the script printed (https://zyad-hamed.tailb73e19.ts.net:8443) in Safari, Share, **Add to Home Screen**. The HUD installs like an app, full screen, JARVIS icon in the dock of your life. The AIOS career dashboard rides along at `/aios/` on the same host (served from disk by JARVIS, so nothing squatting on localhost:3000 can ever hijack it; invisible in work mode). Caveat until the home laptop takes over: it works while this Mac is awake.
 
 ## Phase 1: the home laptop becomes the brain
 

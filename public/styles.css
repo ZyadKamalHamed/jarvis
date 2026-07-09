@@ -191,6 +191,7 @@ body.ready .panel:nth-child(8) { animation-delay: .68s; }
   padding: 3px 10px; cursor: pointer;
 }
 .chip-btn:hover { background: rgba(23,212,254,.16); border-color: var(--cyan); }
+a.chip-btn { text-decoration: none; display: inline-block; }
 
 /* ---------- Briefing ---------- */
 .headline {

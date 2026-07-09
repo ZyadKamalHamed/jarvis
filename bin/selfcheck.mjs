@@ -12,6 +12,7 @@
 
 import { spawn } from 'node:child_process'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -105,6 +106,12 @@ async function main() {
     const docRes = await fetch(BASE + '/api/doc?work=1&file=HANDOVER.md')
     if (docRes.status !== 403) fail('/api/doc not blocked in work mode (got ' + docRes.status + ')')
     if ((work.todos || []).some(t => t.career)) fail('career todo present in work mode')
+    const aiosWork = await fetch(BASE + '/aios/?work=1')
+    if (aiosWork.status !== 404) fail('/aios visible in work mode (got ' + aiosWork.status + ')')
+    if (fs.existsSync(path.join(os.homedir(), 'Coding/AIOS/dashboard/index.html'))) {
+      const aiosFull = await fetch(BASE + '/aios/')
+      if (aiosFull.status !== 200) fail('/aios not served in full mode (got ' + aiosFull.status + ')')
+    }
     const convoRes = await (await fetch(BASE + '/api/conversations?work=1')).json()
     if ((convoRes.entries || []).some(e => e.mode !== 'work')) fail('full-mode conversation served in work mode')
     const convoBlob = JSON.stringify(convoRes).toLowerCase()

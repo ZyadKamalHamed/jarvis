@@ -17,6 +17,7 @@ const DATA = path.join(ROOT, 'data')
 const PUBLIC = path.join(ROOT, 'public')
 const CACHE = path.join(ROOT, '.cache', 'tts')
 const AIOS_DATA = process.env.AIOS_DATA || path.join(os.homedir(), 'Coding/AIOS/data/aios-data.json')
+const AIOS_DASH = process.env.AIOS_DASH || path.join(os.homedir(), 'Coding/AIOS/dashboard/index.html')
 const PORT = Number(process.env.JARVIS_PORT || 4777)
 const HOST = process.env.JARVIS_HOST || '127.0.0.1'
 
@@ -582,6 +583,19 @@ const server = http.createServer(async (req, res) => {
         })
       }
       return json(res, 200, { ok: true })
+    }
+    if ((url.pathname === '/aios' || url.pathname === '/aios/') && req.method === 'GET') {
+      // The AIOS career dashboard, served from disk so it is always the
+      // current build and never whatever squats on localhost:3000. In work
+      // mode it answers 404, indistinguishable from not existing.
+      if ((await currentMode(url)) === 'work') return json(res, 404, { error: 'not found' })
+      try {
+        const buf = await fsp.readFile(AIOS_DASH)
+        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'content-length': buf.length, 'cache-control': 'no-store' })
+        return res.end(buf)
+      } catch {
+        return json(res, 404, { error: 'AIOS dashboard not found on disk' })
+      }
     }
     if (url.pathname.startsWith('/api/')) return json(res, 404, { error: 'unknown endpoint' })
     return await serveStatic(res, url.pathname === '/' ? '/index.html' : url.pathname)

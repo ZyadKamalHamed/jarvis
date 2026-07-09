@@ -49,7 +49,7 @@ Everything under `data/` is written by the daily agent (`jobs/jarvis-daily-run.m
 
 `/api/data` additionally serves `wins` (last 50), `metrics` (last 14 lines of metrics.jsonl, career pipeline key removed in work mode), `evolution` (evolution.json; its `summary` must always be work-safe) and `proposals` (career-flagged ones stripped in work mode).
 
-Other endpoints: `GET /api/conversations` (mode-filtered: work mode only ever sees work-mode exchanges), `POST /api/open {url}` (opens a tab on the server's Mac via `open`; 403 in work mode; http(s) only), `GET /api/draft?file=` (serves a drafts/ file; 403 in work mode).
+Other endpoints: `GET /api/conversations` (mode-filtered: work mode only ever sees work-mode exchanges), `POST /api/open {url}` (opens a tab on the server's Mac via `open`; 403 in work mode; http(s) only), `GET /api/draft?file=` (serves a drafts/ file; 403 in work mode), `GET /api/doc?file=` (serves a docs/ file; 403 in work mode), `GET /aios/` (serves the AIOS dashboard straight from `~/Coding/AIOS/dashboard/index.html`, no port-3000 dependence; 404 in work mode so it looks nonexistent; linked from the career panel's OPEN AIOS button, which is career-only and hidden in work mode anyway).
 
 ## Self-evolution (binding)
 
