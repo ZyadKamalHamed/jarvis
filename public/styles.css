@@ -385,6 +385,10 @@ body.speaking .r-core { animation: none; }
 .prop-title { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .16em; color: var(--green); margin-bottom: 4px; }
 .prop-sum { color: #cdeefb; font-size: 13.5px; line-height: 1.5; }
 
+/* The hidden attribute must beat any author display rule (flex panels
+   like .convo and .player otherwise render even while hidden). */
+[hidden] { display: none !important; }
+
 /* Conversation log overlay */
 .convo {
   position: fixed; bottom: 64px; left: 50%; transform: translateX(-50%);
