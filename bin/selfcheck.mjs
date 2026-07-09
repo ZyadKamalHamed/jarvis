@@ -25,6 +25,8 @@ const BANNED = [
   'career', 'jobhunt', 'job hunt', 'job application', 'application', 'interview',
   'recruiter', 'leetcode', 'codesignal', 'dsa', 'aios', 'resume', 'cover letter',
   'salary review', 'garvan', 'seek.com', 'jobs surfaced', 'apps sent',
+  'hirevue', 'greenhouse', 'magtanong', 'sonder', 'deloitte', 'commbank',
+  'amberjack', 'gradconnection', 'avature', 'assessments.amazon',
 ]
 
 const failures = []
@@ -87,7 +89,26 @@ async function main() {
     if ((work.emails?.accounts || []).some(a => a.jobhunt)) fail('jobhunt account present in work mode')
     if (work.wins != null) fail('wins (impact log) present in work mode')
     if ((work.metrics || []).some(m => m.pipelines && 'career' in m.pipelines)) fail('career pipeline in work-mode metrics')
+    if ((work.proposals || []).some(p => p.career)) fail('career proposal present in work mode')
     note('work-mode payload is clean (' + BANNED.length + ' banned terms checked)')
+
+    // The action surfaces must be dead in work mode: no tab may ever open
+    // and no draft may ever render on a screen that might be visible at work.
+    const openRes = await fetch(BASE + '/api/open?work=1', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ url: 'https://example.com' }),
+    })
+    if (openRes.status !== 403) fail('/api/open not blocked in work mode (got ' + openRes.status + ')')
+    const draftRes = await fetch(BASE + '/api/draft?work=1&file=probe.md')
+    if (draftRes.status !== 403) fail('/api/draft not blocked in work mode (got ' + draftRes.status + ')')
+    const convoRes = await (await fetch(BASE + '/api/conversations?work=1')).json()
+    if ((convoRes.entries || []).some(e => e.mode !== 'work')) fail('full-mode conversation served in work mode')
+    const convoBlob = JSON.stringify(convoRes).toLowerCase()
+    for (const term of BANNED) {
+      if (convoBlob.includes(term)) fail(`work-mode conversation log leaks banned term: "${term}"`)
+    }
+    note('work mode: /api/open and /api/draft blocked, conversation log filtered')
 
     const fb = await fetch(BASE + '/api/feedback', {
       method: 'POST',
