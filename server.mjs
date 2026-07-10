@@ -409,17 +409,35 @@ function json(res, code, obj) {
   res.end(body)
 }
 
-function readBody(req) {
+function readBody(req, maxBytes = 65536) {
   return new Promise((resolve, reject) => {
     let data = ''
+    let bytes = 0
+    let dead = false
     req.on('data', c => {
+      if (dead) return // keep draining so the 413 can still be delivered
+      bytes += c.length
+      if (bytes > maxBytes) {
+        dead = true
+        data = ''
+        const e = new Error('body too large')
+        e.status = 413
+        return reject(e)
+      }
       data += c
-      if (data.length > 1e6) reject(new Error('body too large'))
+    })
+    req.on('error', () => {
+      const e = new Error('request aborted')
+      e.status = 400
+      reject(e)
     })
     req.on('end', () => {
+      if (dead) return
       try {
         resolve(data ? JSON.parse(data) : {})
-      } catch (e) {
+      } catch {
+        const e = new Error('invalid JSON body')
+        e.status = 400
         reject(e)
       }
     })
@@ -443,8 +461,21 @@ async function serveStatic(res, urlPath) {
   }
 }
 
+// Rolling-hour rate limit on the ask bar: the head agent is a real claude
+// session per call, so a runaway client must not be able to drain the plan.
+const askTimes = []
+
+function askRateLimited() {
+  const now = Date.now()
+  while (askTimes.length && now - askTimes[0] > 3600000) askTimes.shift()
+  if (askTimes.length >= 30) return true
+  askTimes.push(now)
+  return false
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`)
+  res.setHeader('x-content-type-options', 'nosniff')
   try {
     if (url.pathname === '/api/data' && req.method === 'GET') {
       return json(res, 200, await aggregate(await currentMode(url)))
@@ -466,6 +497,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/ask' && req.method === 'POST') {
       const body = await readBody(req)
       if (!body.question) return json(res, 400, { error: 'question required' })
+      if (askRateLimited()) return json(res, 429, { error: 'Thirty asks in an hour, sir. The reasoning core needs a moment.' })
       const result = await askClaude(String(body.question).slice(0, 2000), await currentMode(url))
       if (!result.ok) {
         recordFeedback({
@@ -479,7 +511,9 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/tts' && req.method === 'POST') {
       const body = await readBody(req)
       if (!body.text) return json(res, 400, { error: 'text required' })
-      const { buf, type } = await tts(String(body.text).slice(0, 5000))
+      // 2400 chars comfortably covers a 120-second briefing read; anything
+      // longer is a mistake that would burn ElevenLabs credit for nothing.
+      const { buf, type } = await tts(String(body.text).slice(0, 2400))
       res.writeHead(200, { 'content-type': type, 'content-length': buf.length })
       return res.end(buf)
     }
@@ -601,7 +635,7 @@ const server = http.createServer(async (req, res) => {
     return await serveStatic(res, url.pathname === '/' ? '/index.html' : url.pathname)
   } catch (e) {
     console.error(req.method, url.pathname, e)
-    return json(res, 500, { error: e.message })
+    return json(res, e.status || 500, { error: e.message })
   }
 })
 

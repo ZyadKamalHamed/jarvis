@@ -128,6 +128,16 @@ async function main() {
     if (!fb.ok) fail('/api/feedback returned ' + fb.status)
     else note('/api/feedback accepts posts')
 
+    const oversize = await fetch(BASE + '/api/feedback', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text: 'x'.repeat(70000), selfcheck: true }),
+    }).catch(() => null)
+    if (!oversize || oversize.status !== 413) fail('oversize body not rejected with 413 (got ' + (oversize?.status ?? 'connection error') + ')')
+    const sniff = await fetch(BASE + '/api/data')
+    if (sniff.headers.get('x-content-type-options') !== 'nosniff') fail('nosniff header missing')
+    note('hardening: oversize body 413, nosniff header set')
+
     const modeAfter = fs.existsSync(modeFile) ? fs.readFileSync(modeFile, 'utf8') : null
     if (modeBefore !== modeAfter) fail('selfcheck mutated data/mode.json')
     else note('mode.json untouched')
