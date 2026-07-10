@@ -1,10 +1,12 @@
 # HANDOVER
 
-Written 9 July 2026 by the session that built the agentic layer, for whichever model continues the work (expected: Claude Opus 4.8). Read `CLAUDE.md` first, then this. Zyad asked for effort guidance per task; it is included and calibrated honestly.
+Written 9 July 2026 by the session that built the agentic layer, updated 10 July after the ultimate upgrade batch, for whichever model continues the work (expected: Claude Opus 4.8). Read `CLAUDE.md` first, then this. Zyad asked for effort guidance per task; it is included and calibrated honestly.
 
 ## State of the system tonight
 
-Everything described in `CLAUDE.md` is real, selfcheck-gated and pushed to the private repo (github.com/ZyadKamalHamed/jarvis). Tonight added: head agent with same-day session memory and a conversation log, briefing actions with tab opening, proposals with one-tap routines, drafts pipeline, the agentic daily-run spec, the mobile kit (Tailscale serve, LaunchAgent, migration and notify scripts, GO-MOBILE runbook), the Obsidian Second Brain (14 notes in `~/Documents/Obsidian Vault/Second Brain/`), and staged Friday briefing data with real verified links.
+Everything described in `CLAUDE.md` is real, selfcheck-gated and pushed to the private repo (github.com/ZyadKamalHamed/jarvis). 9 Jul added: head agent with same-day session memory and a conversation log, briefing actions with tab opening, proposals with one-tap routines, drafts pipeline, the agentic daily-run spec, the mobile kit (Tailscale serve, LaunchAgent, migration and notify scripts, GO-MOBILE runbook), the Obsidian Second Brain (14 notes in `~/Documents/Obsidian Vault/Second Brain/`), and staged Friday briefing data with real verified links.
+
+10 Jul added (design spec: `docs/superpowers/specs/2026-07-10-jarvis-ultimate-upgrades-design.md`): launchd scheduling of both agents with a proven headless permission setup, long-term agent memory distilled nightly (full and work-safe files), SSE streaming answers, Sydney weather, quick-capture inbox, token-gated health webhook, EventKit calendar module (access grant pending), focus mode with pomodoro, mode-aware command palette, proper PWA (generated icons, offline shell, /api never cached), rotating backups, the Obsidian daily note, and server hardening (body caps, ask rate limit, TTS cap).
 
 ## Invariants you never relax (in order)
 
@@ -24,18 +26,20 @@ Everything described in `CLAUDE.md` is real, selfcheck-gated and pushed to the p
 - Graph consumer accounts: incremental consent works; one new device-code run with `["Mail.Read","Mail.ReadWrite","Mail.Send"]` upgrades the cached token. MSAL adds reserved scopes itself; passing openid/profile explicitly makes it throw.
 - Tailscale on this Mac is now logged in under the ZyadKamalHamed account, which is a DIFFERENT tailnet from the old zyadschneider24 one (tail70b7c5.ts.net). The OpenClaw Google Chat funnel config from memory targets the old tailnet and is currently dead. Fixing it means either re-login with the Google account or re-running the funnel setup for the new hostname AND updating the Google Chat app's audience URL (see the openclaw-g-chat-config skill notes).
 - `tailscale serve` needed one-time tailnet enablement (admin URL); if serve status looks empty, check that first.
-- The scheduled tasks (jarvis-daily-run 7:30am, jarvis-evolve 9:30pm) exist as SKILL.md folders but were still NOT registered in the Claude app UI as of tonight. Nothing agentic happens in the morning until Zyad does that by hand. This is the number one operational gap.
+- RESOLVED 10 Jul: the scheduled agents now run via launchd (`deploy/com.zyad.jarvis.daily.plist` 7:30am, `.evolve.plist` 9:30pm, wrapper `bin/run-job.sh`), verified end to end headlessly. The Claude-app registration path is dead; do not resurrect it.
+- Headless `claude -p` IGNORES `.claude/settings.json` permissions until the workspace is trusted: `projects["/Users/Zyad/Coding/JARVIS"].hasTrustDialogAccepted: true` in `~/.claude.json` (set on this Mac 10 Jul; the home laptop will need it too, or one interactive claude session in the repo).
+- macOS would not present the Calendars TCC prompt to processes spawned from the Claude build sandbox; EventKit requests silently fail there with status notDetermined. From a real Terminal or launchd context the prompt presents normally. `data/calendar.json` carries an honest denied state with the fix in its setupNote.
 
 ## Task queue with effort guidance
 
 Effort levels refer to Claude Code's /effort (or equivalent care): low = mechanical, medium = normal engineering, high = touching stealth, money, or outbound surfaces.
 
-1. **Register scheduled tasks** (Zyad's hands, 3 minutes, no model needed). Blocks everything agentic.
-2. **Home laptop migration** (follow `docs/GO-MOBILE.md` phase 1): effort **medium**. Mostly mechanical; the two judgement points are the plist node path and re-registering scheduled tasks there.
+1. DONE 10 Jul: scheduled agents registered via launchd, verified headlessly.
+2. **Home laptop migration** (follow `docs/GO-MOBILE.md` phase 1): effort **medium**. Mostly mechanical; the judgement points are the plist node path, loading all THREE plists (server, daily, evolve) and setting the workspace trust flag there.
 3. **Graph Mail.ReadWrite + Mail.Send** (`bin/outlook.py` consent + draft + send): effort **high**. It is an outbound-capable surface: draft creation is safe, the send path must demand an explicit fresh confirmation string from the HUD per message and log every send to conversations. Verified API shapes are in AGENT-UPGRADES.
-4. **Calendar module** (Shortcuts route into `data/calendar.json`, day-plan integration): effort **medium**. Watch the TCC notes.
+4. DONE 10 Jul: calendar module shipped (EventKit, not Shortcuts). Only the access grant may need a human hand; see the gotcha above.
 5. **Sonder prep pack before 22 Jul** (career-analyst output into briefing + drafts): effort **medium**, content quality matters more than code.
-6. **Obsidian nightly sync** (daily run appends material changes to Second Brain notes): effort **medium**; append-only, never rewrite user edits, no #review tags.
+6. DONE 10 Jul: Obsidian daily note ships each morning (`bin/obsidian-note.mjs`, owns only Daily/YYYY-MM-DD.md). The wider append-to-topic-notes sync remains open: effort **medium**; append-only, never rewrite user edits, no #review tags.
 7. **Telegram audio delivery, briefing archive, Drive watching, reactor-music sync**: effort **low**, good evolve-agent fodder; leave them to the nightly loop unless Zyad asks.
 8. **Anything touching selfcheck, stripCareer, or the banned list**: effort **high**, always, regardless of size.
 

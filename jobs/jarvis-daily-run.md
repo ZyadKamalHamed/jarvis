@@ -62,6 +62,7 @@ In full mode: for each `autoOpen` action, run `open <url>` so the tabs are sitti
 ## Phase 6: audio, telemetry, ping
 
 - If `ELEVENLABS_API_KEY` exists, POST the voiceScript to `http://127.0.0.1:4777/api/tts`, save to `public/assets/briefing-YYYY-MM-DD.mp3`, set `audioFile`. Server down = skip audio, never fail the run.
+- Run `node bin/obsidian-note.mjs` (writes the daily log into the Second Brain vault; missing vault = harmless skip).
 - Update `data/system.json` (per-pipeline lastRun, status, note) and append one line to `data/metrics.jsonl`. Never rewrite old lines.
 - `openclaw message send --channel telegram --target 8343303630 --message "JARVIS briefing ready. <workHeadline>"` (career-free, one line). If openclaw is unavailable, `bash bin/notify.sh "JARVIS briefing ready. <workHeadline>"` is the fallback; if both fail, note it in system.json and move on.
 
