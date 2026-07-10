@@ -578,13 +578,56 @@ async function ask(question) {
   const panel = $('#answer'), body = $('#answer-body')
   panel.hidden = false
   body.innerHTML = 'Processing<span class="cursor"></span>'
-  const res = await fetch('/api/ask' + (WORK_PARAM ? '?work=1' : ''), {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ question }),
-  })
-  const j = await res.json()
-  const answer = j.ok ? j.answer : 'Fault in the reasoning core: ' + (j.error || 'unknown')
-  body.innerHTML = ''
-  await typewrite(body, answer, 6)
+  let j = null
+  let streamedText = ''
+  try {
+    const res = await fetch('/api/ask' + (WORK_PARAM ? '?work=1' : ''), {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ question, stream: true }),
+    })
+    if ((res.headers.get('content-type') || '').includes('text/event-stream')) {
+      // Words render as claude writes them; the done event carries the
+      // authoritative final answer (interim tool narration gets replaced).
+      const reader = res.body.getReader()
+      const dec = new TextDecoder()
+      let buf = ''
+      let started = false
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buf += dec.decode(value, { stream: true })
+        let idx
+        while ((idx = buf.indexOf('\n\n')) >= 0) {
+          const chunk = buf.slice(0, idx)
+          buf = buf.slice(idx + 2)
+          const ev = (chunk.match(/^event: (.+)$/m) || [])[1]
+          const dataLine = (chunk.match(/^data: (.+)$/m) || [])[1]
+          if (!ev || !dataLine) continue
+          let data
+          try { data = JSON.parse(dataLine) } catch { continue }
+          if (ev === 'delta' && data.text) {
+            if (!started) { started = true; body.textContent = '' }
+            streamedText += data.text
+            body.textContent = streamedText
+            body.scrollTop = body.scrollHeight
+          } else if (ev === 'done') {
+            j = data
+          }
+        }
+      }
+      if (!j) j = streamedText ? { ok: true, answer: streamedText } : { ok: false, error: 'the stream went quiet' }
+    } else {
+      j = await res.json()
+    }
+  } catch (e) {
+    j = { ok: false, error: e.message }
+  }
+  const answer = j.ok ? (j.answer || streamedText) : 'Fault in the reasoning core: ' + (j.error || 'unknown')
+  if (j.ok && streamedText && answer === streamedText) {
+    body.textContent = answer // already on screen, do not retype
+  } else {
+    body.innerHTML = ''
+    await typewrite(body, answer, 6)
+  }
   if ($('#speak-answers').checked && j.ok) speak(answer)
 }
 

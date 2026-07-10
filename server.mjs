@@ -213,7 +213,11 @@ function trimmedSnapshot(payload) {
 
 let askChain = Promise.resolve()
 
-function askClaude(question, mode) {
+// onDelta, when given, switches claude to stream-json and receives text
+// fragments as they are generated; the returned promise still resolves to
+// the same {ok, answer, sessionId} shape either way.
+function askClaude(question, mode, onDelta) {
+  const streaming = typeof onDelta === 'function'
   const run = async () => {
     const started = Date.now()
     const snapshot = trimmedSnapshot(await aggregate(mode))
@@ -253,7 +257,9 @@ function askClaude(question, mode) {
     }
     const fresh = !sess[mode]
     const sid = fresh ? crypto.randomUUID() : sess[mode]
-    const args = ['-p', question, '--output-format', 'json', '--append-system-prompt', persona]
+    const args = ['-p', question, '--append-system-prompt', persona]
+    if (streaming) args.push('--output-format', 'stream-json', '--verbose', '--include-partial-messages')
+    else args.push('--output-format', 'json')
     args.push(fresh ? '--session-id' : '--resume', sid)
     if (mode === 'work') {
       // Tools could read career files regardless of the stripped snapshot;
@@ -269,10 +275,34 @@ function askClaude(question, mode) {
       const child = spawn('claude', args, { cwd: ROOT, env, timeout: 300000 })
       let out = ''
       let err = ''
-      child.stdout.on('data', d => (out += d))
+      let lineBuf = ''
+      let finalRes = null
+      child.stdout.on('data', d => {
+        if (!streaming) { out += d; return }
+        lineBuf += d
+        let nl
+        while ((nl = lineBuf.indexOf('\n')) >= 0) {
+          const line = lineBuf.slice(0, nl).trim()
+          lineBuf = lineBuf.slice(nl + 1)
+          if (!line) continue
+          try {
+            const ev = JSON.parse(line)
+            if (ev.type === 'stream_event') {
+              const delta = ev.event?.delta
+              if (delta?.type === 'text_delta' && delta.text) onDelta(delta.text)
+            } else if (ev.type === 'result') {
+              finalRes = { ok: !ev.is_error, answer: String(ev.result || '').trim(), sessionId: ev.session_id }
+            }
+          } catch { /* non-JSON noise on stdout; ignore */ }
+        }
+      })
       child.stderr.on('data', d => (err += d))
       child.on('error', e => resolve({ ok: false, error: e.message }))
       child.on('close', code => {
+        if (streaming) {
+          if (finalRes) return resolve(finalRes)
+          return resolve({ ok: false, error: (err.trim() || 'stream ended without a result, exit ' + code).slice(0, 400) })
+        }
         if (code !== 0) return resolve({ ok: false, error: (err || out).trim().slice(0, 400) || 'claude exited ' + code })
         try {
           const j = JSON.parse(out)
@@ -508,7 +538,25 @@ const server = http.createServer(async (req, res) => {
       const body = await readBody(req)
       if (!body.question) return json(res, 400, { error: 'question required' })
       if (askRateLimited()) return json(res, 429, { error: 'Thirty asks in an hour, sir. The reasoning core needs a moment.' })
-      const result = await askClaude(String(body.question).slice(0, 2000), await currentMode(url))
+      const mode = await currentMode(url)
+      const question = String(body.question).slice(0, 2000)
+      if (body.stream) {
+        // SSE over the POST response: delta events while claude writes,
+        // one done event with the full result, then the stream closes.
+        res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' })
+        const send = (ev, data) => { try { res.write(`event: ${ev}\ndata: ${JSON.stringify(data)}\n\n`) } catch { /* client gone */ } }
+        const result = await askClaude(question, mode, text => send('delta', { text }))
+        if (!result.ok) {
+          recordFeedback({
+            at: new Date().toISOString(),
+            type: 'ask-failure',
+            text: `ask failed: ${result.error}`.slice(0, 500),
+          }).catch(() => {})
+        }
+        send('done', result)
+        return res.end()
+      }
+      const result = await askClaude(question, mode)
       if (!result.ok) {
         recordFeedback({
           at: new Date().toISOString(),
