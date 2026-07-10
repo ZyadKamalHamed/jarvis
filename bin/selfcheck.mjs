@@ -47,6 +47,18 @@ function checkDataFiles() {
   note('data files parse')
 }
 
+function checkWorkMemory() {
+  // The work-mode memory file feeds the head agent's system prompt on a
+  // screen that may be visible at the office. Same bar as the payload.
+  const f = path.join(ROOT, 'data', 'agent-memory-work.md')
+  if (!fs.existsSync(f)) { note('no work-mode memory file yet'); return }
+  const text = fs.readFileSync(f, 'utf8').toLowerCase()
+  for (const term of BANNED) {
+    if (text.includes(term)) fail(`agent-memory-work.md leaks banned term: "${term}"`)
+  }
+  note('work-mode memory file is clean')
+}
+
 async function waitForServer(child) {
   for (let i = 0; i < 40; i++) {
     if (child.exitCode !== null) throw new Error('server exited ' + child.exitCode)
@@ -62,6 +74,7 @@ async function waitForServer(child) {
 async function main() {
   console.log('JARVIS selfcheck')
   checkDataFiles()
+  checkWorkMemory()
 
   const modeFile = path.join(ROOT, 'data', 'mode.json')
   const modeBefore = fs.existsSync(modeFile) ? fs.readFileSync(modeFile, 'utf8') : null

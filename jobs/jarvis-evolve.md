@@ -30,8 +30,10 @@ JARVIS gets better through a closed loop: signals in (feedback, telemetry, failu
    }
    ```
    `summary` appears in the morning briefing, so it must contain zero career content regardless of mode. Mark processed feedback by carrying `lastRun` forward; never delete feedback.jsonl.
-8. **Groom the backlog.** Add new items observed during the run (errors seen, awkward code, missing telemetry). Reprioritise: user-facing first. Cap the file at 25 items; drop the stalest with a note in the commit.
-9. **Restart the live server only if server.mjs changed:** kill the process on port 4777 and relaunch `nohup node server.mjs > /tmp/jarvis-server.log 2>&1 &`. The HUD reconnects on its own.
+8. **Refresh the head agent's memory.** Read today's `data/conversations.jsonl` entries and today's decisions (proposals decided, todos ticked, deadlines passed or moved). Update `data/agent-memory.md`: add what must survive across days, rewrite stale lines, convert relative dates to absolute, keep it under 120 lines. Then update `data/agent-memory-work.md` under the same rules but containing ONLY work-safe content; it must pass the banned-terms scan in `bin/selfcheck.mjs`. Never delete either file; a night with nothing worth remembering is a valid outcome.
+9. **Run the backup.** `bash bin/backup.sh` (rotating tarball of data/, drafts/ and .env to ~/Backups/jarvis). This is not optional; it is the only copy of runtime state that exists outside this folder.
+10. **Groom the backlog.** Add new items observed during the run (errors seen, awkward code, missing telemetry). Reprioritise: user-facing first. Cap the file at 25 items; drop the stalest with a note in the commit.
+11. **Restart the live server only if server.mjs changed:** kill the process on port 4777 and relaunch `nohup node server.mjs > /tmp/jarvis-server.log 2>&1 &`. The HUD reconnects on its own.
 
 ## Guardrails (binding)
 

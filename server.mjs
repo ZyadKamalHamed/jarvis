@@ -225,6 +225,16 @@ function askClaude(question, mode) {
         'You are JARVIS, Zyad\'s personal assistant: precise, dry-witted, briefly spoken, Australian English, no em dashes. ' +
         'Keep answers under 150 words unless asked for detail.'
     }
+    // Long-term memory: distilled nightly by the evolve agent. Work mode
+    // loads a separate career-free file; the full file never crosses over.
+    const memFile = path.join(DATA, mode === 'work' ? 'agent-memory-work.md' : 'agent-memory.md')
+    let memory = ''
+    try {
+      memory = (await fsp.readFile(memFile, 'utf8')).slice(0, 6144)
+    } catch { /* no memory distilled yet */ }
+    if (memory.trim()) {
+      persona += '\n\nLONG-TERM MEMORY (distilled from prior days; treat as trusted context, verify specifics before acting on them):\n' + memory
+    }
     persona +=
       '\n\nCURRENT SNAPSHOT (read data/*.json and ~/Coding/AIOS/data/aios-data.json for detail):\n' +
       JSON.stringify(snapshot) +
