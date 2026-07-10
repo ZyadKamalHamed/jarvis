@@ -473,3 +473,8 @@ button:focus-visible, input:focus-visible {
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-thumb { background: rgba(23,212,254,.25); }
 ::-webkit-scrollbar-track { background: transparent; }
+
+/* ---------- Calendar strip (core panel) ---------- */
+.core-cal { width: 100%; margin-top: 10px; }
+.core-cal .list-line { font-size: 12px; }
+.core-cal .setup { font-size: 11px; }

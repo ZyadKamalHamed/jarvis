@@ -131,6 +131,9 @@ function stripCareer(payload) {
   // Captured thoughts are free text and cannot be auto-classified; the whole
   // inbox stays out of work mode (capturing still works there, write-only).
   delete out.inbox
+  // Same logic for calendar events: an interview title cannot be told apart
+  // from a dentist appointment automatically, so none of them travel.
+  delete out.calendar
   return out
 }
 
@@ -148,6 +151,7 @@ async function aggregate(mode) {
   payload.proposals = (await readJson(path.join(DATA, 'proposals.json'), [])) || []
   payload.todos = (await readJson(path.join(DATA, 'todos.json'), [])) || []
   payload.weather = await weatherPayload() // not career data; serves in both modes
+  payload.calendar = await calendarPayload() // stripped whole in work mode
   const inbox = (await readJson(INBOX_FILE, [])) || []
   payload.inbox = inbox.filter(i => !i.done && !i.selfcheck).slice(-20)
   return mode === 'work' ? stripCareer(payload) : payload
@@ -214,6 +218,23 @@ async function weatherPayload() {
   const age = w?.updatedAt ? Date.now() - new Date(w.updatedAt).getTime() : Infinity
   if (age > 30 * 60000) refreshWeather() // fire and forget; stale is served now, the write triggers SSE
   return w
+}
+
+// ---------- calendar (EventKit via bin/calendar.mjs, same lazy pattern) ----------
+
+const CALENDAR_FILE = path.join(DATA, 'calendar.json')
+let calendarSpawning = false
+
+async function calendarPayload() {
+  const c = await readJson(CALENDAR_FILE)
+  const age = c?.updatedAt ? Date.now() - new Date(c.updatedAt).getTime() : Infinity
+  if (age > 30 * 60000 && !calendarSpawning) {
+    calendarSpawning = true
+    const child = spawn('node', [path.join(ROOT, 'bin', 'calendar.mjs')], { stdio: 'ignore' })
+    child.on('close', () => { calendarSpawning = false })
+    child.on('error', () => { calendarSpawning = false })
+  }
+  return c
 }
 
 // ---------- SSE ----------

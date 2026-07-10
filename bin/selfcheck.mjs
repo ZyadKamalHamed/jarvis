@@ -120,6 +120,7 @@ async function main() {
     if (docRes.status !== 403) fail('/api/doc not blocked in work mode (got ' + docRes.status + ')')
     if ((work.todos || []).some(t => t.career)) fail('career todo present in work mode')
     if ('inbox' in work && work.inbox !== undefined) fail('capture inbox present in work mode')
+    if ('calendar' in work && work.calendar !== undefined) fail('calendar present in work mode')
     const aiosWork = await fetch(BASE + '/aios/?work=1')
     if (aiosWork.status !== 404) fail('/aios visible in work mode (got ' + aiosWork.status + ')')
     if (fs.existsSync(path.join(os.homedir(), 'Coding/AIOS/dashboard/index.html'))) {

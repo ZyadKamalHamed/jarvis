@@ -18,6 +18,7 @@ The bar: nothing in the briefing may be homework you could have already done. If
    - Top 5 threads per account: from, subject, one-line summary, urgency (act-now, today, fyi). Unreachable accounts get `connected: false`.
 6. **Work.** Refresh `data/work.json` from reachable sources; TGS projects list carries through from `context/work-projects.md` with only observable status changes.
 7. **Weather.** Read `data/weather.json` (the server keeps it fresh from Open-Meteo; do not fetch it yourself). If today's `rainPct` is 50 or higher or the label mentions rain or storm, the day plan says so in one practical line (umbrella for the commute, indoor alternative if training outdoors). If the file is missing or older than 12 hours, skip weather commentary; never guess.
+7b. **Calendar.** Run `node bin/calendar.mjs` then read `data/calendar.json`. Timed events are fixed points the day plan must route around; name any event that collides with the default train/gym/evening shape. If `status` is not `ok`, mention the setup note once in the general section and move on.
 8. **Inbox triage.** Read `data/inbox.json` (quick captures from the prompt, `in:` prefix). Fold each undone item into the day plan, a todo, or a proposal, whichever fits, then mark it processed: `curl -s http://127.0.0.1:4777/api/capture -X POST -H 'content-type: application/json' -d '{"id":"<id>","done":true}'`. An item you cannot place stays undone and gets a line in the briefing instead.
 
 ## Phase 2: think and prepare (the agentic core, cap 7 minutes)

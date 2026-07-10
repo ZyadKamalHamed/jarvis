@@ -299,6 +299,33 @@ function renderCore() {
   if (u?.assignments) stats.push([u.assignments.filter(a => a.status !== 'done').length, 'assignments'])
   if (f?.weight?.currentKg) stats.push([f.weight.currentKg + 'kg', 'weight'])
   $('#core-stats').innerHTML = stats.slice(0, 6).map(([v, l]) => `<div class="core-stat"><b>${esc(v)}</b><span>${esc(l)}</span></div>`).join('')
+  renderCalendar()
+}
+
+function renderCalendar() {
+  const box = $('#core-cal')
+  const c = DATA.calendar // absent entirely in work mode
+  if (!c || document.body.dataset.mode === 'work') { box.innerHTML = ''; return }
+  if (c.status !== 'ok') {
+    box.innerHTML = c.setupNote ? `<div class="setup">${esc(c.setupNote)}</div>` : ''
+    return
+  }
+  const now = Date.now()
+  const upcoming = (c.events || [])
+    .filter(e => !e.allDay && new Date(e.end).getTime() > now)
+    .slice(0, 4)
+  if (!upcoming.length) { box.innerHTML = '<p class="empty">Calendar clear for the next two days.</p>'; return }
+  const label = e => {
+    const d = new Date(e.start)
+    const time = d.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', hour12: false })
+    const today = new Date().toDateString() === d.toDateString()
+    return (today ? '' : 'TMRW ') + time
+  }
+  box.innerHTML = upcoming.map(e => `
+    <div class="list-line">
+      <span class="l">${esc(e.title)}</span>
+      <span class="r">${esc(label(e))}</span>
+    </div>`).join('')
 }
 
 function renderComms() {
