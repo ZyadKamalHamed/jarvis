@@ -1257,6 +1257,7 @@ addEventListener('keydown', e => {
 ;(async function init() {
   tickClock()
   startParticles()
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {})
   await fetchData().catch(() => {
     $('#briefing-headline').textContent = 'Server unreachable. Run: node server.mjs'
   })

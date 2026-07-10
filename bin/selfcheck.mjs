@@ -173,6 +173,12 @@ async function main() {
     if (sniff.headers.get('x-content-type-options') !== 'nosniff') fail('nosniff header missing')
     note('hardening: oversize body 413, nosniff header set')
 
+    const manifest = await fetch(BASE + '/manifest.webmanifest')
+    if (!manifest.ok) fail('manifest.webmanifest not served (got ' + manifest.status + ')')
+    const swSrc = await (await fetch(BASE + '/sw.js')).text()
+    if (!swSrc.includes("startsWith('/api/')")) fail('service worker lost the never-cache-/api rule')
+    note('PWA: manifest served, service worker keeps /api uncached')
+
     const modeAfter = fs.existsSync(modeFile) ? fs.readFileSync(modeFile, 'utf8') : null
     if (modeBefore !== modeAfter) fail('selfcheck mutated data/mode.json')
     else note('mode.json untouched')

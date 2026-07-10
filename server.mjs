@@ -40,6 +40,7 @@ const MIME = {
   '.wav': 'audio/wav',
   '.woff2': 'font/woff2',
   '.ico': 'image/x-icon',
+  '.webmanifest': 'application/manifest+json; charset=utf-8',
 }
 
 function loadDotEnv() {
