@@ -488,6 +488,65 @@ async function checkin(body) {
   return { ok: true }
 }
 
+// ---------- health ingest (Health Auto Export pushes to this) ----------
+
+function tokenMatches(given, expected) {
+  const h = s => crypto.createHash('sha256').update(String(s)).digest()
+  return crypto.timingSafeEqual(h(given), h(expected))
+}
+
+async function ingestHealth(payload) {
+  const metrics = payload?.data?.metrics
+  if (!Array.isArray(metrics)) {
+    const e = new Error('unrecognised payload (expecting the Health Auto Export REST format)')
+    e.status = 400
+    throw e
+  }
+  const byName = {}
+  for (const m of metrics) {
+    const pts = Array.isArray(m?.data) ? m.data.filter(p => typeof p?.qty === 'number') : []
+    if (pts.length) byName[m.name] = { units: m.units || '', last: pts[pts.length - 1] }
+  }
+  const file = path.join(DATA, 'fitness.json')
+  const fit = (await readJson(file, {})) || {}
+  const applied = []
+  const w = byName.weight_body_mass
+  if (w) {
+    let kg = w.last.qty
+    if (/lb/i.test(w.units)) kg *= 0.45359237
+    kg = Math.round(kg * 10) / 10
+    fit.weight = fit.weight || {}
+    fit.weight.currentKg = kg
+    const date = String(w.last.date || '').slice(0, 10) || new Date().toISOString().slice(0, 10)
+    const series = (fit.weight.series || []).filter(p => p.date !== date)
+    series.push({ date, kg })
+    series.sort((a, b) => (a.date < b.date ? -1 : 1))
+    fit.weight.series = series.slice(-90)
+    applied.push('weight')
+  }
+  fit.nutrition = fit.nutrition || {}
+  const energy = byName.dietary_energy
+  if (energy) {
+    let kcal = energy.last.qty
+    if (/kj/i.test(energy.units)) kcal /= 4.184
+    fit.nutrition.todayKcal = Math.round(kcal)
+    applied.push('energy')
+  }
+  const grams = { protein: 'proteinG', carbohydrates: 'carbsG', total_fat: 'fatG' }
+  for (const [name, key] of Object.entries(grams)) {
+    if (byName[name]) {
+      fit.nutrition[key] = Math.round(byName[name].last.qty)
+      applied.push(name)
+    }
+  }
+  if (applied.length) {
+    fit.source = 'health-auto-export'
+    fit.updatedAt = new Date().toISOString()
+    await writeJsonAtomic(file, fit)
+  }
+  return { applied }
+}
+
 // ---------- music playlist ----------
 
 async function listMusic() {
@@ -761,6 +820,17 @@ const server = http.createServer(async (req, res) => {
       } catch {
         return json(res, 404, { error: 'draft not found' })
       }
+    }
+    if (url.pathname === '/api/health' && req.method === 'POST') {
+      // Apple Health data pushed from the phone (Health Auto Export app).
+      // Reachable over the tailnet only; the token stops casual mischief.
+      const expected = process.env.JARVIS_HEALTH_TOKEN
+      if (!expected) return json(res, 503, { error: 'health ingest not configured: set JARVIS_HEALTH_TOKEN in .env' })
+      if (!tokenMatches(url.searchParams.get('token') || '', expected)) return json(res, 403, { error: 'bad token' })
+      const body = await readBody(req, 512 * 1024)
+      const summary = await ingestHealth(body)
+      notifyClients()
+      return json(res, 200, { ok: true, ...summary })
     }
     if (url.pathname === '/api/capture' && req.method === 'POST') {
       const body = await readBody(req)

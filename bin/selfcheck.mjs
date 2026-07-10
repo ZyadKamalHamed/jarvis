@@ -142,6 +142,14 @@ async function main() {
     if (!fb.ok) fail('/api/feedback returned ' + fb.status)
     else note('/api/feedback accepts posts')
 
+    const badHealth = await fetch(BASE + '/api/health?token=wrong-token-probe', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{}',
+    })
+    if (![403, 503].includes(badHealth.status)) fail('/api/health accepted a bad token (got ' + badHealth.status + ')')
+    else note('/api/health rejects bad tokens (' + badHealth.status + ')')
+
     const cap = await fetch(BASE + '/api/capture', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
