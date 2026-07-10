@@ -897,6 +897,216 @@ addEventListener('keydown', e => {
   if (e.key === 'Escape') stopSpeech()
 })
 
+// ---------- command palette ----------
+// In work mode only innocuous actions appear; the mode toggle stays on its
+// unlabelled paths so the palette never advertises that a switch exists.
+
+function paletteActions() {
+  const work = document.body.dataset.mode === 'work'
+  const preset = t => () => { const i = $('#ask-input'); i.value = t; i.focus() }
+  const acts = [
+    { name: 'Speak the briefing', run: () => $('#speak-briefing').click() },
+    { name: 'Silence', run: () => stopSpeech() },
+    { name: 'Conversation log', run: () => toggleConvo() },
+    { name: 'Focus mode', run: () => setFocusMode(document.body.dataset.focus !== '1') },
+    { name: 'Play or pause music', run: () => $('#player-play').click() },
+    { name: 'Next track', run: () => $('#player-next').click() },
+    { name: 'Ask JARVIS...', run: () => $('#ask-input').focus() },
+    { name: 'Capture a thought (in:)', run: preset('in: ') },
+    { name: 'File feedback (fb:)', run: preset('fb: ') },
+    { name: 'Shortcut help', run: () => showHelp() },
+  ]
+  if (!work) {
+    acts.push(
+      { name: 'Log a win (win:)', run: preset('win: ') },
+      { name: 'Open AIOS dashboard', run: () => window.open('/aios/', '_blank', 'noopener') },
+      { name: 'Enter work mode', run: () => setMode('work') },
+    )
+  }
+  const panels = ['briefing', 'core', 'comms', 'uni', 'study', 'fitness', 'work']
+  if (!work) panels.splice(2, 0, 'career')
+  for (const p of panels) {
+    acts.push({ name: 'Jump to ' + (p === 'core' ? 'reactor' : p), run: () => document.getElementById('panel-' + p)?.scrollIntoView({ behavior: 'smooth', block: 'start' }) })
+  }
+  return acts
+}
+
+let paletteSel = 0
+
+function paletteMatches() {
+  const q = $('#palette-input').value.trim().toLowerCase()
+  return paletteActions().filter(a => !q || a.name.toLowerCase().includes(q))
+}
+
+function renderPalette() {
+  const list = $('#palette-list')
+  const matches = paletteMatches()
+  paletteSel = Math.min(paletteSel, Math.max(0, matches.length - 1))
+  list.innerHTML = matches.map((a, i) =>
+    `<div class="palette-item ${i === paletteSel ? 'sel' : ''}" data-pi="${i}">${esc(a.name)}</div>`).join('')
+    || '<div class="palette-empty">Nothing matches that, sir.</div>'
+}
+
+function togglePalette(open) {
+  const el = $('#palette')
+  const show = open ?? el.hidden
+  el.hidden = !show
+  if (show) {
+    $('#palette-input').value = ''
+    paletteSel = 0
+    renderPalette()
+    $('#palette-input').focus()
+  }
+}
+
+$('#palette-input').addEventListener('input', () => { paletteSel = 0; renderPalette() })
+$('#palette-input').addEventListener('keydown', e => {
+  const matches = paletteMatches()
+  if (e.key === 'ArrowDown') { e.preventDefault(); paletteSel = Math.min(paletteSel + 1, matches.length - 1); renderPalette() }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); paletteSel = Math.max(paletteSel - 1, 0); renderPalette() }
+  else if (e.key === 'Enter' && matches[paletteSel]) { togglePalette(false); matches[paletteSel].run() }
+  else if (e.key === 'Escape') { e.stopPropagation(); togglePalette(false) }
+})
+$('#palette-list').addEventListener('click', e => {
+  const item = e.target.closest('.palette-item')
+  if (!item) return
+  const matches = paletteMatches()
+  const act = matches[Number(item.dataset.pi)]
+  togglePalette(false)
+  act?.run()
+})
+
+function showHelp() { $('#help').hidden = false }
+$('#help-close').addEventListener('click', () => { $('#help').hidden = true })
+
+addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); togglePalette() }
+  else if (e.key === '?' && !e.target.matches('input, textarea')) { e.preventDefault(); showHelp() }
+  else if (e.key === 'Escape') {
+    if (!$('#palette').hidden) togglePalette(false)
+    if (!$('#help').hidden) $('#help').hidden = true
+  }
+})
+
+// ---------- focus mode + pomodoro ----------
+// Timestamps, not tick counting: a laptop lid or backgrounded tab cannot
+// drift the clock. Completed focus blocks land in the manual check-in log.
+
+const pomo = {
+  preset: Number(localStorage.getItem('jarvis-pomo-preset')) || 25,
+  phase: 'idle', // idle | focus | break
+  endAt: null,
+  timer: null,
+}
+
+function pomoBreakFor(preset) { return preset === 50 ? 10 : 5 }
+
+function pomoDoneKey() { return 'jarvis-pomo-done-' + new Date().toISOString().slice(0, 10) }
+
+function setFocusMode(on) {
+  document.body.dataset.focus = on ? '1' : '0'
+  localStorage.setItem('jarvis-focus', on ? '1' : '0')
+  $('#focus-btn').classList.toggle('on', on)
+}
+
+function pomoRender() {
+  const remaining = pomo.endAt ? Math.max(0, pomo.endAt - Date.now()) : pomo.preset * 60000
+  const mm = String(Math.floor(remaining / 60000)).padStart(2, '0')
+  const ss = String(Math.floor((remaining % 60000) / 1000)).padStart(2, '0')
+  $('#pomo-time').textContent = `${mm}:${ss}`
+  const phaseEl = $('#pomo-phase')
+  phaseEl.textContent = pomo.phase === 'focus' ? 'FOCUS' : pomo.phase === 'break' ? 'BREAK' : 'READY'
+  phaseEl.className = 'pomo-phase ' + (pomo.phase === 'idle' ? '' : pomo.phase)
+  $('#pomo-start').textContent = pomo.phase === 'idle' ? 'START' : 'STOP'
+  $('#pomo-preset').textContent = pomo.preset === 50 ? '50/10' : '25/5'
+  $('#focus-chip').textContent = pomo.phase.toUpperCase() === 'IDLE' ? 'IDLE' : pomo.phase.toUpperCase()
+  const done = Number(localStorage.getItem(pomoDoneKey())) || 0
+  $('#pomo-count').textContent = done ? `${done} block${done > 1 ? 's' : ''} banked today` : ''
+  if (pomo.phase === 'focus') document.title = `${mm}:${ss} FOCUS · J.A.R.V.I.S.`
+  else if (document.title !== 'J.A.R.V.I.S.') document.title = 'J.A.R.V.I.S.'
+}
+
+function pomoSave() {
+  localStorage.setItem('jarvis-pomo', JSON.stringify({ phase: pomo.phase, endAt: pomo.endAt, preset: pomo.preset }))
+}
+
+function pomoTick() {
+  if (pomo.phase === 'idle') return
+  const remaining = pomo.endAt - Date.now()
+  if (remaining > 0) { pomoRender(); return }
+  if (pomo.phase === 'focus') {
+    const done = (Number(localStorage.getItem(pomoDoneKey())) || 0) + 1
+    localStorage.setItem(pomoDoneKey(), String(done))
+    fetch('/api/checkin', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ type: 'focus', minutes: pomo.preset }),
+    }).catch(() => {})
+    speak('Focus block banked, sir. Break time.')
+    pomo.phase = 'break'
+    pomo.endAt = Date.now() + pomoBreakFor(pomo.preset) * 60000
+  } else {
+    speak('Break over. When you are ready, sir.')
+    pomo.phase = 'idle'
+    pomo.endAt = null
+    clearInterval(pomo.timer)
+    pomo.timer = null
+  }
+  pomoSave()
+  pomoRender()
+}
+
+function pomoStartStop() {
+  if (pomo.phase === 'idle') {
+    pomo.phase = 'focus'
+    pomo.endAt = Date.now() + pomo.preset * 60000
+    if (!pomo.timer) pomo.timer = setInterval(pomoTick, 500)
+  } else {
+    pomo.phase = 'idle'
+    pomo.endAt = null
+    clearInterval(pomo.timer)
+    pomo.timer = null
+  }
+  pomoSave()
+  pomoRender()
+}
+
+$('#focus-btn').addEventListener('click', () => setFocusMode(document.body.dataset.focus !== '1'))
+$('#pomo-start').addEventListener('click', pomoStartStop)
+$('#pomo-reset').addEventListener('click', () => {
+  pomo.phase = 'idle'
+  pomo.endAt = null
+  clearInterval(pomo.timer)
+  pomo.timer = null
+  pomoSave()
+  pomoRender()
+})
+$('#pomo-preset').addEventListener('click', () => {
+  if (pomo.phase !== 'idle') return
+  pomo.preset = pomo.preset === 50 ? 25 : 50
+  localStorage.setItem('jarvis-pomo-preset', String(pomo.preset))
+  pomoSave()
+  pomoRender()
+})
+addEventListener('keydown', e => {
+  if (e.key === 'Escape' && document.body.dataset.focus === '1'
+    && $('#convo').hidden && $('#answer').hidden
+    && $('#palette').hidden && $('#help').hidden) setFocusMode(false)
+})
+
+;(function pomoRestore() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('jarvis-pomo') || 'null')
+    if (saved?.preset) pomo.preset = saved.preset
+    if (saved?.phase && saved.phase !== 'idle' && saved.endAt > Date.now()) {
+      pomo.phase = saved.phase
+      pomo.endAt = saved.endAt
+      pomo.timer = setInterval(pomoTick, 500)
+    }
+  } catch { /* fresh start */ }
+  if (localStorage.getItem('jarvis-focus') === '1') setFocusMode(true)
+  pomoRender()
+})()
+
 // ---------- music player ----------
 
 const music = $('#boot-audio')

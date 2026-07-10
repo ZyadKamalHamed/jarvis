@@ -48,6 +48,7 @@
   </div>
   <div class="rail-right">
     <button class="rail-btn silence" id="voice-stop" title="Stop JARVIS speaking (Esc)">SILENCE</button>
+    <button class="rail-btn" id="focus-btn" title="Focus mode: uni panel and a pomodoro, nothing else">FOCUS</button>
     <button class="rail-btn" id="log-btn" title="Conversation log">LOG</button>
     <button class="rail-btn" id="audio-toggle" title="Sound">SND ON</button>
     <div class="clock">
@@ -119,6 +120,20 @@
     <div class="wins" id="career-wins"></div>
   </section>
 
+  <section class="panel span6" id="panel-focus">
+    <header class="panel-head"><h2>Deep work</h2><span class="chip" id="focus-chip">IDLE</span></header>
+    <div class="pomo">
+      <div class="pomo-time" id="pomo-time">25:00</div>
+      <div class="pomo-phase" id="pomo-phase">READY</div>
+      <div class="pomo-controls">
+        <button class="act-btn yes" id="pomo-start">START</button>
+        <button class="act-btn" id="pomo-reset">RESET</button>
+        <button class="act-btn" id="pomo-preset" title="Switch block length">25/5</button>
+      </div>
+      <div class="pomo-count" id="pomo-count"></div>
+    </div>
+  </section>
+
   <section class="panel span6" id="panel-uni">
     <header class="panel-head"><h2>University</h2><span class="chip" id="uni-chip"></span></header>
     <div id="uni-body"></div>
@@ -149,6 +164,26 @@
 <div id="convo" class="convo" hidden>
   <div class="answer-head"><span>CONVERSATION LOG</span><button id="convo-close">×</button></div>
   <div id="convo-body" class="convo-body"></div>
+</div>
+
+<div id="palette" class="palette" hidden>
+  <input id="palette-input" placeholder="Command..." autocomplete="off" spellcheck="false">
+  <div id="palette-list" class="palette-list"></div>
+</div>
+
+<div id="help" class="convo" hidden>
+  <div class="answer-head"><span>SHORTCUTS</span><button id="help-close">×</button></div>
+  <div class="convo-body help-body">
+    <div><b>Cmd/Ctrl K</b> command palette</div>
+    <div><b>Esc</b> silence, close overlays, leave focus mode</div>
+    <div><b>?</b> this help</div>
+    <div><b>FOCUS</b> rail button: uni panel plus pomodoro, nothing else</div>
+    <div><b>SPEAK</b> reads the briefing and opens its tabs</div>
+    <div><b>in:</b> prefix captures a thought for the morning run</div>
+    <div><b>win:</b> prefix logs a personal win to the record</div>
+    <div><b>fb:</b> prefix files an improvement request for tonight</div>
+    <div><b>MIC</b> push to talk, goes quiet to send</div>
+  </div>
 </div>
 
 <footer class="terminal">
