@@ -128,6 +128,9 @@ function stripCareer(payload) {
   if (out.todos) {
     out.todos = out.todos.filter(t => !t.career).map(({ career, ...rest }) => rest)
   }
+  // Captured thoughts are free text and cannot be auto-classified; the whole
+  // inbox stays out of work mode (capturing still works there, write-only).
+  delete out.inbox
   return out
 }
 
@@ -144,7 +147,73 @@ async function aggregate(mode) {
   payload.evolution = await readJson(path.join(DATA, 'evolution.json'))
   payload.proposals = (await readJson(path.join(DATA, 'proposals.json'), [])) || []
   payload.todos = (await readJson(path.join(DATA, 'todos.json'), [])) || []
+  payload.weather = await weatherPayload() // not career data; serves in both modes
+  const inbox = (await readJson(INBOX_FILE, [])) || []
+  payload.inbox = inbox.filter(i => !i.done && !i.selfcheck).slice(-20)
   return mode === 'work' ? stripCareer(payload) : payload
+}
+
+// ---------- weather (Open-Meteo, Sydney, no key, lazily refreshed) ----------
+
+const WEATHER_FILE = path.join(DATA, 'weather.json')
+const WEATHER_URL = 'https://api.open-meteo.com/v1/forecast?latitude=-33.87&longitude=151.21'
+  + '&current=temperature_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m'
+  + '&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code'
+  + '&timezone=Australia%2FSydney&forecast_days=2'
+
+const WMO = {
+  0: 'clear', 1: 'mostly clear', 2: 'partly cloudy', 3: 'overcast',
+  45: 'fog', 48: 'fog', 51: 'drizzle', 53: 'drizzle', 55: 'drizzle',
+  61: 'light rain', 63: 'rain', 65: 'heavy rain', 66: 'freezing rain', 67: 'freezing rain',
+  71: 'snow', 73: 'snow', 75: 'snow', 77: 'snow',
+  80: 'showers', 81: 'showers', 82: 'heavy showers',
+  85: 'snow showers', 86: 'snow showers', 95: 'thunderstorm', 96: 'thunderstorm', 99: 'thunderstorm',
+}
+
+let weatherFetching = false
+
+async function refreshWeather() {
+  if (weatherFetching) return
+  weatherFetching = true
+  try {
+    const ctrl = new AbortController()
+    const t = setTimeout(() => ctrl.abort(), 5000)
+    const res = await fetch(WEATHER_URL, { signal: ctrl.signal })
+    clearTimeout(t)
+    if (!res.ok) throw new Error('open-meteo ' + res.status)
+    const j = await res.json()
+    const day = i => ({
+      minC: j.daily?.temperature_2m_min?.[i] ?? null,
+      maxC: j.daily?.temperature_2m_max?.[i] ?? null,
+      rainPct: j.daily?.precipitation_probability_max?.[i] ?? null,
+      label: WMO[j.daily?.weather_code?.[i]] || '',
+    })
+    await writeJsonAtomic(WEATHER_FILE, {
+      updatedAt: new Date().toISOString(),
+      source: 'open-meteo',
+      city: 'Sydney',
+      current: {
+        tempC: j.current?.temperature_2m ?? null,
+        feelsC: j.current?.apparent_temperature ?? null,
+        label: WMO[j.current?.weather_code] || '',
+        windKmh: j.current?.wind_speed_10m ?? null,
+      },
+      today: day(0),
+      tomorrow: day(1),
+    })
+  } catch (e) {
+    // No fabrication: a failed fetch leaves the old file (or nothing) as is.
+    console.warn('weather refresh failed:', e.message)
+  } finally {
+    weatherFetching = false
+  }
+}
+
+async function weatherPayload() {
+  const w = await readJson(WEATHER_FILE)
+  const age = w?.updatedAt ? Date.now() - new Date(w.updatedAt).getTime() : Infinity
+  if (age > 30 * 60000) refreshWeather() // fire and forget; stale is served now, the write triggers SSE
+  return w
 }
 
 // ---------- SSE ----------
@@ -208,6 +277,7 @@ function trimmedSnapshot(payload) {
     assignments: (payload.uni?.assignments || []).filter(a => a.status !== 'done').map(a => ({ title: a.title, due: a.due, progressPct: a.progressPct })),
     reviewsDue: payload.study?.queue?.length ?? null,
     proposalsPending: (payload.proposals || []).filter(p => !p.status).map(p => p.title),
+    weather: payload.weather ? { nowC: payload.weather.current?.tempC, today: payload.weather.today } : null,
   }
 }
 
@@ -433,6 +503,35 @@ async function listMusic() {
     }
   } catch { /* no music folder yet */ }
   return { tracks }
+}
+
+// ---------- quick capture inbox ----------
+
+const INBOX_FILE = path.join(DATA, 'inbox.json')
+
+async function capture(body, mode) {
+  const items = (await readJson(INBOX_FILE, [])) || []
+  if (body.id !== undefined && body.done !== undefined) {
+    const hit = items.find(i => i.id === body.id)
+    if (!hit) return { status: 404, out: { error: 'unknown item' } }
+    hit.done = !!body.done
+    hit.doneAt = hit.done ? new Date().toISOString() : null
+    await writeJsonAtomic(INBOX_FILE, items)
+    return { status: 200, out: { ok: true } }
+  }
+  const text = String(body.text || '').trim().slice(0, 500)
+  if (!text) return { status: 400, out: { error: 'text required' } }
+  const item = {
+    id: crypto.randomUUID().slice(0, 8),
+    at: new Date().toISOString(),
+    text,
+    mode, // captures taken at work stay invisible there but keep provenance
+    done: false,
+  }
+  if (body.selfcheck) item.selfcheck = true
+  items.push(item)
+  await writeJsonAtomic(INBOX_FILE, items.slice(-500))
+  return { status: 200, out: { ok: true, id: item.id } }
 }
 
 // ---------- feedback (fuel for the nightly evolve run) ----------
@@ -662,6 +761,12 @@ const server = http.createServer(async (req, res) => {
       } catch {
         return json(res, 404, { error: 'draft not found' })
       }
+    }
+    if (url.pathname === '/api/capture' && req.method === 'POST') {
+      const body = await readBody(req)
+      const { status, out } = await capture(body, await currentMode(url))
+      if (status === 200) notifyClients()
+      return json(res, status, out)
     }
     if (url.pathname === '/api/feedback' && req.method === 'POST') {
       const body = await readBody(req)

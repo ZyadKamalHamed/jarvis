@@ -42,6 +42,7 @@
   <div class="wordmark" id="wordmark" title="">J.A.R.V.I.S.</div>
   <div class="rail-mid">
     <span class="rail-item" id="rail-freshness">DATA <b id="freshness">--</b></span>
+    <span class="rail-item" id="rail-weather" hidden></span>
     <span class="rail-item" id="rail-pipelines"></span>
     <span class="rail-item stealth-dot" id="stealth-dot" hidden>W</span>
   </div>
@@ -97,6 +98,7 @@
     <div id="system-lines" class="sys"></div>
     <div id="system-trend" class="trend" title="Pipeline health, one cell per day"></div>
     <div id="ops-todos"></div>
+    <div id="inbox-box"></div>
   </section>
 
   <section class="panel span6 career-only" id="panel-career">
@@ -151,7 +153,7 @@
 <footer class="terminal">
   <button id="mic" class="mic" title="Push to talk">MIC</button>
   <span class="prompt">jarvis&gt;</span>
-  <input id="ask-input" autocomplete="off" spellcheck="false" placeholder="Ask me anything, sir." title="Prefix with fb: to file an improvement request for the nightly evolve run">
+  <input id="ask-input" autocomplete="off" spellcheck="false" placeholder="Ask me anything, sir." title="Prefixes: in: capture a thought for the morning run, win: log review ammunition, fb: file an improvement request">
   <label class="speak-toggle"><input type="checkbox" id="speak-answers"> voice</label>
   <div class="player" id="player" hidden>
     <span class="player-track" id="player-track"></span>

@@ -158,6 +158,16 @@ function freshness() {
 
 function renderRail() {
   $('#freshness').textContent = freshness()
+  const w = DATA.weather
+  const wEl = $('#rail-weather')
+  if (w?.current?.tempC != null) {
+    const rain = w.today?.rainPct
+    wEl.textContent = `SYD ${Math.round(w.current.tempC)}° ${(w.current.label || '').toUpperCase()}` +
+      (rain != null && rain >= 20 ? ` · RAIN ${rain}%` : '')
+    wEl.hidden = false
+  } else {
+    wEl.hidden = true
+  }
   const pipes = DATA.system?.pipelines || []
   $('#rail-pipelines').innerHTML = pipes.map(p => {
     const cls = p.status === 'ok' ? 'ok' : p.status === 'error' ? 'err' : 'warn'
@@ -253,10 +263,11 @@ document.addEventListener('click', async e => {
   const tick = e.target.closest('.todo-tick')
   if (tick) {
     tick.disabled = true
+    const isInbox = !!tick.dataset.inbox
     try {
-      await fetch('/api/todo', {
+      await fetch(isInbox ? '/api/capture' : '/api/todo', {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ id: tick.dataset.todo, done: true }),
+        body: JSON.stringify({ id: isInbox ? tick.dataset.inbox : tick.dataset.todo, done: true }),
       })
       fetchData()
     } catch { tick.disabled = false }
@@ -314,6 +325,26 @@ function renderComms() {
   }).join('') || '<div>No pipeline telemetry.</div>'
   renderTrend()
   renderOps()
+  renderInbox()
+}
+
+function renderInbox() {
+  const box = $('#inbox-box')
+  const items = DATA.inbox // absent entirely in work mode
+  if (!items || !items.length) { box.innerHTML = ''; return }
+  const stamp = at => new Date(at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })
+  box.innerHTML = `
+    <header class="panel-head sub"><h2>Inbox</h2>
+      <span class="chip warn">${items.length} CAPTURED</span>
+    </header>
+    ${items.slice().reverse().map(i => `
+      <div class="todo">
+        <button class="todo-tick" data-inbox="${esc(i.id)}" title="Clear">&#10003;</button>
+        <div class="todo-main">
+          <div class="todo-title">${esc(i.text)}</div>
+          <div class="todo-detail">captured ${stamp(i.at)} · the morning run will place it</div>
+        </div>
+      </div>`).join('')}`
 }
 
 function renderOps() {
@@ -656,13 +687,27 @@ async function sendFeedback(text) {
     : 'Feedback did not save. The server is being difficult.', 6)
 }
 
+async function sendCapture(text) {
+  const panel = $('#answer'), body = $('#answer-body')
+  panel.hidden = false
+  const res = await fetch('/api/capture', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text }),
+  })
+  body.innerHTML = ''
+  await typewrite(body, res.ok
+    ? 'Captured, sir. The morning run will file it where it belongs.'
+    : 'The capture did not save. Try again.', 6)
+}
+
 $('#ask-input').addEventListener('keydown', e => {
   if (e.key === 'Enter' && e.target.value.trim()) {
     const text = e.target.value.trim()
     const fb = text.match(/^(?:fb|feedback):\s*(.+)/i)
     const win = text.match(/^win:\s*(.+)/i)
+    const cap = text.match(/^in:\s*(.+)/i)
     if (fb) sendFeedback(fb[1])
     else if (win) sendWin(win[1])
+    else if (cap) sendCapture(cap[1])
     else ask(text)
     e.target.value = ''
   }

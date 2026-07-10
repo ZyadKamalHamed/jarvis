@@ -119,6 +119,7 @@ async function main() {
     const docRes = await fetch(BASE + '/api/doc?work=1&file=HANDOVER.md')
     if (docRes.status !== 403) fail('/api/doc not blocked in work mode (got ' + docRes.status + ')')
     if ((work.todos || []).some(t => t.career)) fail('career todo present in work mode')
+    if ('inbox' in work && work.inbox !== undefined) fail('capture inbox present in work mode')
     const aiosWork = await fetch(BASE + '/aios/?work=1')
     if (aiosWork.status !== 404) fail('/aios visible in work mode (got ' + aiosWork.status + ')')
     if (fs.existsSync(path.join(os.homedir(), 'Coding/AIOS/dashboard/index.html'))) {
@@ -140,6 +141,18 @@ async function main() {
     })
     if (!fb.ok) fail('/api/feedback returned ' + fb.status)
     else note('/api/feedback accepts posts')
+
+    const cap = await fetch(BASE + '/api/capture', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text: 'selfcheck probe', selfcheck: true }),
+    })
+    if (!cap.ok) fail('/api/capture returned ' + cap.status)
+    else {
+      const fullAfter = await (await fetch(BASE + '/api/data')).json()
+      if ((fullAfter.inbox || []).some(i => i.selfcheck)) fail('selfcheck capture probe leaked into the inbox payload')
+      else note('/api/capture accepts posts, probes filtered from the payload')
+    }
 
     const oversize = await fetch(BASE + '/api/feedback', {
       method: 'POST',
