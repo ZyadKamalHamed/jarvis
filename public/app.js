@@ -627,6 +627,7 @@ async function speak(text) {
     stopSpeech() // a second request may have started while this one was rendering
     const el = new Audio(URL.createObjectURL(blob))
     el.crossOrigin = 'anonymous'
+    el.volume = vol.voice
     currentSpeech = el
     el.addEventListener('ended', () => { if (currentSpeech === el) currentSpeech = null })
     pulseCoreFrom(el)
@@ -941,6 +942,7 @@ function paletteActions() {
     { name: 'Focus mode', run: () => setFocusMode(document.body.dataset.focus !== '1') },
     { name: 'Play or pause music', run: () => $('#player-play').click() },
     { name: 'Next track', run: () => $('#player-next').click() },
+    { name: 'Volume mixer', run: () => $('#vol-btn').click() },
     { name: 'Ask JARVIS...', run: () => $('#ask-input').focus() },
     { name: 'Capture a thought (in:)', run: preset('in: ') },
     { name: 'File feedback (fb:)', run: preset('fb: ') },
@@ -1121,7 +1123,7 @@ $('#pomo-preset').addEventListener('click', () => {
 addEventListener('keydown', e => {
   if (e.key === 'Escape' && document.body.dataset.focus === '1'
     && $('#convo').hidden && $('#answer').hidden
-    && $('#palette').hidden && $('#help').hidden) setFocusMode(false)
+    && $('#palette').hidden && $('#help').hidden && $('#mixer').hidden) setFocusMode(false)
 })
 
 ;(function pomoRestore() {
@@ -1159,6 +1161,7 @@ function playTrack(i) {
   trackIdx = ((i % tracks.length) + tracks.length) % tracks.length
   const abs = new URL(tracks[trackIdx].file, location.href).href
   if (music.src !== abs) music.src = tracks[trackIdx].file
+  applyMusicVolume()
   if (soundOn) music.play().catch(() => {})
   updatePlayer()
 }
@@ -1191,6 +1194,58 @@ music.addEventListener('ended', () => {
   else if (tracks.length > 1) playTrack(trackIdx + 1)
   else updatePlayer()
 })
+
+// ---------- volume mixer ----------
+// Two independent channels: the playlist element and the speech elements.
+// musicDuck is the automatic dip under a briefing read; the slider value
+// scales it rather than fighting it.
+
+function storedVol(key) {
+  const n = Number(localStorage.getItem(key))
+  return Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 1
+}
+
+const vol = { music: storedVol('jarvis-vol-music'), voice: storedVol('jarvis-vol-voice') }
+let musicDuck = 1
+
+function applyMusicVolume() {
+  music.volume = Math.min(1, Math.max(0, vol.music * musicDuck))
+}
+
+function applyVoiceVolume() {
+  if (currentSpeech) currentSpeech.volume = vol.voice
+}
+
+function renderMixer() {
+  $('#mix-music').value = Math.round(vol.music * 100)
+  $('#mix-voice').value = Math.round(vol.voice * 100)
+  $('#mix-music-val').textContent = Math.round(vol.music * 100)
+  $('#mix-voice-val').textContent = Math.round(vol.voice * 100)
+}
+
+$('#mix-music').addEventListener('input', e => {
+  vol.music = Number(e.target.value) / 100
+  localStorage.setItem('jarvis-vol-music', String(vol.music))
+  applyMusicVolume()
+  renderMixer()
+})
+$('#mix-voice').addEventListener('input', e => {
+  vol.voice = Number(e.target.value) / 100
+  localStorage.setItem('jarvis-vol-voice', String(vol.voice))
+  applyVoiceVolume()
+  renderMixer()
+})
+$('#vol-btn').addEventListener('click', () => {
+  const el = $('#mixer')
+  el.hidden = !el.hidden
+  if (!el.hidden) renderMixer()
+})
+$('#mixer-close').addEventListener('click', () => { $('#mixer').hidden = true })
+addEventListener('keydown', e => {
+  if (e.key === 'Escape' && !$('#mixer').hidden) $('#mixer').hidden = true
+})
+renderMixer()
+applyMusicVolume()
 
 // ---------- boot sequence ----------
 
@@ -1237,7 +1292,8 @@ async function runBoot() {
   if (soundOn) {
     try {
       await music.play()
-      music.volume = 1
+      musicDuck = 1
+      applyMusicVolume()
     } catch {
       synthBootHum()
     }
@@ -1263,9 +1319,11 @@ function finishBoot() {
   const music = $('#boot-audio')
   if (!music.paused) {
     // Let the track ride under the morning read, at a civilised level.
+    // Duck factor only; the mixer's music slider scales on top of it.
     const fade = setInterval(() => {
-      music.volume = Math.max(0.35, music.volume - 0.05)
-      if (music.volume <= 0.35) clearInterval(fade)
+      musicDuck = Math.max(0.35, musicDuck - 0.05)
+      applyMusicVolume()
+      if (musicDuck <= 0.35) clearInterval(fade)
     }, 200)
   }
   if (localStorage.getItem('jarvis-speak-boot') === '1') {

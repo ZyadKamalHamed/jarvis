@@ -53,6 +53,7 @@
     <button class="rail-btn silence" id="voice-stop" title="Stop JARVIS speaking (Esc)">SILENCE</button>
     <button class="rail-btn" id="focus-btn" title="Focus mode: uni panel and a pomodoro, nothing else">FOCUS</button>
     <button class="rail-btn" id="log-btn" title="Conversation log">LOG</button>
+    <button class="rail-btn" id="vol-btn" title="Volume mixer">VOL</button>
     <button class="rail-btn" id="audio-toggle" title="Sound">SND ON</button>
     <div class="clock">
       <span id="clock-time">--:--</span>
@@ -170,6 +171,14 @@
   <div id="convo-body" class="convo-body"></div>
 </div>
 
+<div id="mixer" class="mixer" hidden>
+  <div class="answer-head"><span>VOLUME</span><button id="mixer-close">×</button></div>
+  <div class="mixer-body">
+    <label class="mix-row"><span>MUSIC</span><input type="range" id="mix-music" min="0" max="100" step="1"><b id="mix-music-val"></b></label>
+    <label class="mix-row"><span>VOICE</span><input type="range" id="mix-voice" min="0" max="100" step="1"><b id="mix-voice-val"></b></label>
+  </div>
+</div>
+
 <div id="palette" class="palette" hidden>
   <input id="palette-input" placeholder="Command..." autocomplete="off" spellcheck="false">
   <div id="palette-list" class="palette-list"></div>
@@ -183,6 +192,7 @@
     <div><b>?</b> this help</div>
     <div><b>FOCUS</b> rail button: uni panel plus pomodoro, nothing else</div>
     <div><b>SPEAK</b> reads the briefing and opens its tabs</div>
+    <div><b>VOL</b> mixer: music and voice levels separately</div>
     <div><b>in:</b> prefix captures a thought for the morning run</div>
     <div><b>win:</b> prefix logs a personal win to the record</div>
     <div><b>fb:</b> prefix files an improvement request for tonight</div>

@@ -520,3 +520,18 @@ body[data-focus="1"] #panel-focus, body[data-focus="1"] #panel-uni { display: bl
 /* ---------- Help overlay ---------- */
 .help-body { font-family: var(--font-mono); font-size: 12px; line-height: 2.1; }
 .help-body b { color: var(--cyan); font-weight: 400; margin-right: 6px; }
+
+/* ---------- Volume mixer ---------- */
+.mixer {
+  position: fixed; z-index: 60; top: 58px; right: 22px;
+  width: min(280px, calc(100vw - 24px));
+  background: var(--panel-solid); border: 1px solid var(--hairline);
+  clip-path: var(--notch); box-shadow: 0 0 24px rgba(23, 212, 254, 0.16);
+}
+.mixer-body { padding: 12px 16px 16px; display: flex; flex-direction: column; gap: 12px; }
+.mix-row {
+  display: grid; grid-template-columns: 52px 1fr 36px; align-items: center; gap: 10px;
+  font-family: var(--font-mono); font-size: 11px; letter-spacing: .12em; color: var(--dim);
+}
+.mix-row b { color: var(--cyan-soft); font-weight: 400; text-align: right; }
+.mix-row input[type="range"] { width: 100%; accent-color: var(--cyan); height: 3px; cursor: pointer; }
