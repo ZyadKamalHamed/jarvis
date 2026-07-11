@@ -51,6 +51,7 @@ Everything under `data/` is written by the daily agent (`jobs/jarvis-daily-run.m
 - `POST /api/ask` appends to `data/conversations.jsonl` and maintains `data/ask-session.json`
 - `POST /api/proposal` updates `data/proposals.json` (accept/dismiss) and appends accepted routines to `data/routines.json`
 - `POST /api/capture` appends to or ticks `data/inbox.json` (works in both modes; reading does not)
+- `POST /api/run-briefing` kicks the morning agent manually (the phone-in-bed button): 403 in work mode, 409 while a run holds the job lock; payload carries `dailyJob.running` in full mode only
 - `POST /api/health?token=` (token from `JARVIS_HEALTH_TOKEN` in `.env`) ingests Health Auto Export pushes into `fitness.json`; 512KB cap, wrong token 403, unconfigured 503. `bin/health-url.sh` prints the paste-ready URL.
 - Everything else in `data/` is read-only to the app.
 

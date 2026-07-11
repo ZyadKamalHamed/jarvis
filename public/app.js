@@ -191,6 +191,12 @@ function renderBriefing() {
     head.dataset.done = headKey
     typewrite(head, b.headline || '')
   }
+  const runBtn = $('#run-briefing')
+  if (runBtn) {
+    const running = !!DATA.dailyJob?.running
+    runBtn.disabled = running
+    runBtn.textContent = running ? 'RUNNING' : 'RUN NOW'
+  }
   const pcls = p => (p === 'high' ? 'p-high' : p === 'medium' ? 'p-med' : '')
   const overnight = DATA.evolution?.changed && DATA.evolution.summary
     ? `<div class="overnight">WHILE YOU SLEPT: ${esc(DATA.evolution.summary)}</div>`
@@ -864,6 +870,30 @@ $('#speak-briefing').addEventListener('click', () => {
   }
 })
 
+$('#run-briefing').addEventListener('click', async () => {
+  const btn = $('#run-briefing')
+  btn.disabled = true
+  const panel = $('#answer'), body = $('#answer-body')
+  try {
+    const r = await fetch('/api/run-briefing', { method: 'POST' })
+    const j = await r.json().catch(() => ({}))
+    panel.hidden = false
+    body.innerHTML = ''
+    if (r.ok) {
+      btn.textContent = 'RUNNING'
+      await typewrite(body, 'On it, sir. The agent is rebuilding the briefing now; it lands here in ten to fifteen minutes and the panel refreshes itself.', 6)
+    } else if (r.status === 409) {
+      btn.textContent = 'RUNNING'
+      await typewrite(body, 'Already mid-run, sir. It will arrive shortly.', 6)
+    } else {
+      btn.disabled = false
+      await typewrite(body, 'Could not start the run: ' + (j.error || r.status), 6)
+    }
+  } catch {
+    btn.disabled = false
+  }
+})
+
 // ---------- conversation log ----------
 
 async function toggleConvo() {
@@ -918,6 +948,7 @@ function paletteActions() {
   ]
   if (!work) {
     acts.push(
+      { name: 'Run the briefing now', run: () => $('#run-briefing').click() },
       { name: 'Log a win (win:)', run: preset('win: ') },
       { name: 'Open AIOS dashboard', run: () => window.open('/aios/', '_blank', 'noopener') },
       { name: 'Enter work mode', run: () => setMode('work') },

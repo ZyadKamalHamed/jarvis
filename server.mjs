@@ -23,6 +23,16 @@ const HOST = process.env.JARVIS_HOST || '127.0.0.1'
 
 loadDotEnv()
 
+// launchd starts the server with a bare PATH (/usr/bin:/bin); claude lives
+// in ~/.local/bin and homebrew node in /opt/homebrew/bin. Extend once at
+// boot so every spawn resolves exactly as it would from a login shell.
+process.env.PATH = [
+  path.join(os.homedir(), '.local/bin'),
+  '/opt/homebrew/bin',
+  '/usr/local/bin',
+  process.env.PATH || '/usr/bin:/bin',
+].join(':')
+
 const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
@@ -135,6 +145,8 @@ function stripCareer(payload) {
   // Same logic for calendar events: an interview title cannot be told apart
   // from a dentist appointment automatically, so none of them travel.
   delete out.calendar
+  // The manual briefing trigger is a full-mode surface; its status goes too.
+  delete out.dailyJob
   return out
 }
 
@@ -155,6 +167,7 @@ async function aggregate(mode) {
   payload.calendar = await calendarPayload() // stripped whole in work mode
   const inbox = (await readJson(INBOX_FILE, [])) || []
   payload.inbox = inbox.filter(i => !i.done && !i.selfcheck).slice(-20)
+  payload.dailyJob = { running: fs.existsSync(DAILY_LOCK) } // stripped in work mode
   return mode === 'work' ? stripCareer(payload) : payload
 }
 
@@ -586,6 +599,12 @@ async function listMusic() {
   return { tracks }
 }
 
+// ---------- manual briefing trigger ----------
+
+// The lock bin/run-job.sh holds while the daily job runs; its existence is
+// the "a run is in flight" signal for both the endpoint and the HUD button.
+const DAILY_LOCK = path.join(DATA, 'joblogs', '.lock-jarvis-daily-run')
+
 // ---------- quick capture inbox ----------
 
 const INBOX_FILE = path.join(DATA, 'inbox.json')
@@ -842,6 +861,21 @@ const server = http.createServer(async (req, res) => {
       } catch {
         return json(res, 404, { error: 'draft not found' })
       }
+    }
+    if (url.pathname === '/api/run-briefing' && req.method === 'POST') {
+      // Manual kick for the morning agent, built for the phone in bed case.
+      // Full mode only, like every agentic surface; the per-job lock in
+      // run-job.sh makes double-firing impossible.
+      if ((await currentMode(url)) === 'work') return json(res, 403, { error: 'unavailable in work mode' })
+      if (fs.existsSync(DAILY_LOCK)) return json(res, 409, { error: 'a briefing run is already in flight' })
+      const child = spawn('bash', [path.join(ROOT, 'bin', 'run-job.sh'), path.join(ROOT, 'jobs', 'jarvis-daily-run.md')], {
+        cwd: ROOT,
+        detached: true,
+        stdio: 'ignore',
+      })
+      child.on('error', () => {})
+      child.unref()
+      return json(res, 200, { ok: true, started: true })
     }
     if (url.pathname === '/api/health' && req.method === 'POST') {
       // Apple Health data pushed from the phone (Health Auto Export app).

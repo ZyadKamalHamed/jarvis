@@ -420,6 +420,7 @@ body.speaking .r-core { animation: none; }
 
 /* ---------- Stealth ---------- */
 body[data-mode="work"] .career-only { display: none; }
+body[data-mode="work"] .full-only { display: none !important; }
 body[data-mode="work"] .stealth-dot { display: inline-block; }
 
 /* ---------- Responsive ---------- */

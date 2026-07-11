@@ -121,6 +121,7 @@ async function main() {
     if ((work.todos || []).some(t => t.career)) fail('career todo present in work mode')
     if ('inbox' in work && work.inbox !== undefined) fail('capture inbox present in work mode')
     if ('calendar' in work && work.calendar !== undefined) fail('calendar present in work mode')
+    if ('dailyJob' in work && work.dailyJob !== undefined) fail('dailyJob status present in work mode')
     const aiosWork = await fetch(BASE + '/aios/?work=1')
     if (aiosWork.status !== 404) fail('/aios visible in work mode (got ' + aiosWork.status + ')')
     if (fs.existsSync(path.join(os.homedir(), 'Coding/AIOS/dashboard/index.html'))) {
@@ -142,6 +143,21 @@ async function main() {
     })
     if (!fb.ok) fail('/api/feedback returned ' + fb.status)
     else note('/api/feedback accepts posts')
+
+    const runWork = await fetch(BASE + '/api/run-briefing?work=1', { method: 'POST' })
+    if (runWork.status !== 403) fail('/api/run-briefing not blocked in work mode (got ' + runWork.status + ')')
+    // Probe the full-mode path WITHOUT spawning a real run: hold the job
+    // lock ourselves and expect the already-running answer.
+    const lockDir = path.join(ROOT, 'data', 'joblogs', '.lock-jarvis-daily-run')
+    const lockWasOurs = !fs.existsSync(lockDir)
+    if (lockWasOurs) fs.mkdirSync(lockDir, { recursive: true })
+    try {
+      const runBusy = await fetch(BASE + '/api/run-briefing', { method: 'POST' })
+      if (runBusy.status !== 409) fail('/api/run-briefing ignored the job lock (got ' + runBusy.status + ')')
+      else note('/api/run-briefing: 403 in work mode, honours the job lock')
+    } finally {
+      if (lockWasOurs) fs.rmdirSync(lockDir)
+    }
 
     const badHealth = await fetch(BASE + '/api/health?token=wrong-token-probe', {
       method: 'POST',
