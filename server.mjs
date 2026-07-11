@@ -157,6 +157,15 @@ async function aggregate(mode) {
       payload[name === 'emails' ? 'emails' : name] = await readJson(path.join(DATA, name + '.json'))
     })
   )
+  if (payload.briefing?.sections) {
+    const gone = await dismissedIds(payload.briefing.date)
+    if (gone.length) {
+      payload.briefing = {
+        ...payload.briefing,
+        sections: payload.briefing.sections.filter(s => !gone.includes(s.id)),
+      }
+    }
+  }
   payload.career = await readJson(AIOS_DATA)
   payload.wins = await readJsonl(path.join(DATA, 'wins.jsonl'), 50)
   payload.metrics = (await readJsonl(path.join(DATA, 'metrics.jsonl'), 14))?.entries || null
@@ -605,6 +614,18 @@ async function listMusic() {
 // the "a run is in flight" signal for both the endpoint and the HUD button.
 const DAILY_LOCK = path.join(DATA, 'joblogs', '.lock-jarvis-daily-run')
 
+// ---------- briefing dismissals ----------
+
+// Section ids cleared from today's feed. Keyed to the briefing's date so the
+// list resets itself the moment a new briefing lands; ids can carry career
+// words, which is fine because this file is never served, only consulted.
+const DISMISSED_FILE = path.join(DATA, 'dismissed.json')
+
+async function dismissedIds(briefDate) {
+  const d = await readJson(DISMISSED_FILE, null)
+  return d && d.date === briefDate && Array.isArray(d.ids) ? d.ids : []
+}
+
 // ---------- quick capture inbox ----------
 
 const INBOX_FILE = path.join(DATA, 'inbox.json')
@@ -836,6 +857,22 @@ const server = http.createServer(async (req, res) => {
       hit.done = !!body.done
       hit.doneAt = hit.done ? new Date().toISOString() : null
       await writeJsonAtomic(file, todos)
+      notifyClients()
+      return json(res, 200, { ok: true })
+    }
+    if (url.pathname === '/api/dismiss' && req.method === 'POST') {
+      const body = await readBody(req)
+      const id = String(body.id || '')
+      const brief = await readJson(path.join(DATA, 'briefing.json'))
+      const hit = (brief?.sections || []).find(s => s.id === id)
+      // 404 for career sections in work mode, identical to a bad id: a 403
+      // would confirm to a prober that a section with that id exists.
+      if (!hit || (hit.module === 'career' && (await currentMode(url)) === 'work')) {
+        return json(res, 404, { error: 'unknown section' })
+      }
+      const ids = await dismissedIds(brief.date)
+      const next = body.restore ? ids.filter(x => x !== id) : ids.includes(id) ? ids : [...ids, id]
+      await writeJsonAtomic(DISMISSED_FILE, { date: brief.date, ids: next })
       notifyClients()
       return json(res, 200, { ok: true })
     }

@@ -95,11 +95,13 @@ body {
 
 /* ---------- Rail ---------- */
 .rail {
-  position: relative; z-index: 10;
+  position: sticky; top: 0; z-index: 30;
   display: flex; align-items: center; justify-content: space-between; gap: 16px;
   padding: 14px 22px 10px;
   border-bottom: 1px solid var(--hairline);
-  background: linear-gradient(180deg, rgba(8,20,32,.75), rgba(8,20,32,0));
+  background: rgba(4, 12, 20, 0.82);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 .wordmark {
   font-family: var(--font-display); font-weight: 700; font-size: 19px;
@@ -208,6 +210,15 @@ a.chip-btn { text-decoration: none; display: inline-block; }
 .feed-item:last-child .feed-rail::after { display: none; }
 .feed-title { font-weight: 600; font-size: 14.5px; color: #cdeefb; letter-spacing: .02em; }
 .feed-title .mod { font-family: var(--font-mono); font-size: 9.5px; color: var(--dim); letter-spacing: .16em; margin-left: 8px; text-transform: uppercase; }
+.feed-dismiss {
+  float: right; margin-left: 8px; width: 18px; height: 18px;
+  background: none; border: 1px solid var(--hairline); color: var(--dim);
+  font-size: 13px; line-height: 1; cursor: pointer;
+  opacity: 0; transition: opacity .15s ease;
+}
+.feed-item:hover .feed-dismiss, .feed-dismiss:focus-visible { opacity: 1; }
+.feed-dismiss:hover { color: var(--red); border-color: var(--red); background: rgba(255,77,77,.08); }
+.feed-dismiss:disabled { opacity: .3; cursor: default; }
 .feed-body { color: var(--dim); font-size: 13.5px; line-height: 1.45; font-weight: 500; }
 
 /* ---------- Core / reactor ---------- */
@@ -523,7 +534,7 @@ body[data-focus="1"] #panel-focus, body[data-focus="1"] #panel-uni { display: bl
 
 /* ---------- Volume mixer ---------- */
 .mixer {
-  position: fixed; z-index: 60; top: 58px; right: 22px;
+  position: fixed; z-index: 60; bottom: 64px; right: 22px;
   width: min(280px, calc(100vw - 24px));
   background: var(--panel-solid); border: 1px solid var(--hairline);
   clip-path: var(--notch); box-shadow: 0 0 24px rgba(23, 212, 254, 0.16);
@@ -535,3 +546,7 @@ body[data-focus="1"] #panel-focus, body[data-focus="1"] #panel-uni { display: bl
 }
 .mix-row b { color: var(--cyan-soft); font-weight: 400; text-align: right; }
 .mix-row input[type="range"] { width: 100%; accent-color: var(--cyan); height: 3px; cursor: pointer; }
+/* Must trail the base .mixer rule: equal specificity, source order decides. */
+@media (max-width: 720px) {
+  .mixer { bottom: 116px; right: 12px; }
+}

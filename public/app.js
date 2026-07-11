@@ -213,7 +213,7 @@ function renderBriefing() {
     <div class="feed-item ${pcls(s.priority)}">
       <div class="feed-rail"></div>
       <div>
-        <div class="feed-title">${esc(s.title)}<span class="mod">${esc(s.module)}</span></div>
+        <div class="feed-title">${esc(s.title)}<span class="mod">${esc(s.module)}</span>${s.id ? `<button class="feed-dismiss" data-dismiss="${esc(s.id)}" title="Clear from today's feed">&times;</button>` : ''}</div>
         <div class="feed-body">${esc(s.body)}</div>
         ${actionRow(s)}
       </div>
@@ -266,6 +266,18 @@ async function showDraft(name) {
 }
 
 document.addEventListener('click', async e => {
+  const dis = e.target.closest('.feed-dismiss')
+  if (dis) {
+    dis.disabled = true
+    try {
+      await fetch('/api/dismiss', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ id: dis.dataset.dismiss }),
+      })
+      fetchData()
+    } catch { dis.disabled = false }
+    return
+  }
   const tick = e.target.closest('.todo-tick')
   if (tick) {
     tick.disabled = true
@@ -1197,19 +1209,24 @@ music.addEventListener('ended', () => {
 
 // ---------- volume mixer ----------
 // Two independent channels: the playlist element and the speech elements.
-// musicDuck is the automatic dip under a briefing read; the slider value
-// scales it rather than fighting it.
+// Music defaults to 35 percent, the steady level the old post-boot fade
+// always settled at; the slider is the truth at all times except the boot
+// blast, which plays full and then fades down onto the slider value.
 
-function storedVol(key) {
-  const n = Number(localStorage.getItem(key))
-  return Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 1
+function storedVol(key, fallback) {
+  const raw = localStorage.getItem(key)
+  if (raw === null || raw === '') return fallback // Number(null) is 0, not NaN
+  const n = Number(raw)
+  return Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : fallback
 }
 
-const vol = { music: storedVol('jarvis-vol-music'), voice: storedVol('jarvis-vol-voice') }
-let musicDuck = 1
+const vol = { music: storedVol('jarvis-vol-music', 0.35), voice: storedVol('jarvis-vol-voice', 1) }
+let bootFade = null
 
 function applyMusicVolume() {
-  music.volume = Math.min(1, Math.max(0, vol.music * musicDuck))
+  clearInterval(bootFade)
+  bootFade = null
+  music.volume = Math.min(1, Math.max(0, vol.music))
 }
 
 function applyVoiceVolume() {
@@ -1292,8 +1309,7 @@ async function runBoot() {
   if (soundOn) {
     try {
       await music.play()
-      musicDuck = 1
-      applyMusicVolume()
+      music.volume = 1 // the boot blast; finishBoot fades onto the slider
     } catch {
       synthBootHum()
     }
@@ -1317,13 +1333,16 @@ function finishBoot() {
   setTimeout(() => boot.classList.add('gone'), 950)
   document.body.classList.add('ready')
   const music = $('#boot-audio')
-  if (!music.paused) {
-    // Let the track ride under the morning read, at a civilised level.
-    // Duck factor only; the mixer's music slider scales on top of it.
-    const fade = setInterval(() => {
-      musicDuck = Math.max(0.35, musicDuck - 0.05)
-      applyMusicVolume()
-      if (musicDuck <= 0.35) clearInterval(fade)
+  if (!music.paused && music.volume > vol.music) {
+    // Let the track settle from the boot blast onto the mixer's level.
+    // Touching the music slider cancels this and takes over directly.
+    clearInterval(bootFade)
+    bootFade = setInterval(() => {
+      music.volume = Math.max(vol.music, music.volume - 0.05)
+      if (music.volume <= vol.music + 0.001) {
+        clearInterval(bootFade)
+        bootFade = null
+      }
     }, 200)
   }
   if (localStorage.getItem('jarvis-speak-boot') === '1') {

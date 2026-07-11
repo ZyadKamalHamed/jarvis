@@ -23,6 +23,7 @@ Everything under `data/` is written by the daily agent (`jobs/jarvis-daily-run.m
 - `data/conversations.jsonl`: append-only ask log `{at, mode, q, a, ms}`. `data/ask-session.json`: the head agent's rolling session ids (one per mode per day). Both owned by the server.
 - `data/todos.json`: operator tasks (things only Zyad can do), `[{id, title, detail, priority, doc?, url?, career, done, doneAt?}]`. Rendered as the "Operator tasks" card; `doc` names a file in `docs/` viewable via `GET /api/doc` (403 in work mode); ticked via `POST /api/todo`. The weekend day plan folds open items in. Agents may add items; only Zyad marks them done.
 - `data/inbox.json`: quick captures (`in:` prefix in the prompt), `[{id, at, text, mode, done, doneAt?}]` via `POST /api/capture`. Card renders in full mode; the whole list is stripped from the work payload (free text cannot be auto-classified). The morning agent triages each item into the plan, a todo or a proposal, then ticks it through the same endpoint.
+- `data/dismissed.json`: briefing sections cleared from the HUD feed, `{ date, ids[] }`, owned by the server via `POST /api/dismiss`. Keyed to the briefing's `date`, so it self-resets when the next briefing lands; the server filters these sections out of `/api/data` in both modes. Never served raw (ids may carry career words).
 - `data/weather.json`: Sydney conditions, owned by the SERVER (Open-Meteo, no key, lazy 30-minute refresh, honest absence on failure). Served in both modes; agents read it, never fetch it.
 - `data/calendar.json`: today and tomorrow from EventKit via `bin/calendar.mjs` (server-refreshed lazily, `status: ok | denied | error` with a `setupNote`). Full mode only; stripped whole from work mode.
 - `data/agent-memory.md` and `data/agent-memory-work.md`: the head agent's long-term memory, loaded (6KB cap) into every ask's system prompt by mode and distilled nightly by the evolve agent. The work file must contain zero banned-list terms; selfcheck scans it.
@@ -51,6 +52,7 @@ Everything under `data/` is written by the daily agent (`jobs/jarvis-daily-run.m
 - `POST /api/ask` appends to `data/conversations.jsonl` and maintains `data/ask-session.json`
 - `POST /api/proposal` updates `data/proposals.json` (accept/dismiss) and appends accepted routines to `data/routines.json`
 - `POST /api/capture` appends to or ticks `data/inbox.json` (works in both modes; reading does not)
+- `POST /api/dismiss {id, restore?}` clears a briefing section from today's feed via `data/dismissed.json` (restore puts it back). Works in both modes, but career section ids answer 404 in work mode, indistinguishable from an unknown id, so the endpoint cannot be used to probe for career sections.
 - `POST /api/run-briefing` kicks the morning agent manually (the phone-in-bed button): 403 in work mode, 409 while a run holds the job lock; payload carries `dailyJob.running` in full mode only
 - `POST /api/health?token=` (token from `JARVIS_HEALTH_TOKEN` in `.env`) ingests Health Auto Export pushes into `fitness.json`; 512KB cap, wrong token 403, unconfigured 503. `bin/health-url.sh` prints the paste-ready URL.
 - Everything else in `data/` is read-only to the app.
