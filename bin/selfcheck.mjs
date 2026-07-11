@@ -159,6 +159,21 @@ async function main() {
       if (lockWasOurs) fs.rmdirSync(lockDir)
     }
 
+    // /api/dismiss must answer 404 for an unknown id in BOTH modes. That is
+    // what makes a real career section's work-mode 404 indistinguishable from
+    // a bad id, so the endpoint cannot be turned into a probe that confirms a
+    // career section exists. An unknown id returns before any write, so this
+    // does not mutate dismissed.json.
+    for (const q of ['', '?work=1']) {
+      const r = await fetch(BASE + '/api/dismiss' + q, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ id: 'selfcheck-no-such-section' }),
+      })
+      if (r.status !== 404) fail('/api/dismiss unknown id not 404 in ' + (q ? 'work' : 'full') + ' mode (got ' + r.status + ')')
+    }
+    note('/api/dismiss: unknown id answers 404 in both modes (no probe oracle)')
+
     const badHealth = await fetch(BASE + '/api/health?token=wrong-token-probe', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
