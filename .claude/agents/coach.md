@@ -1,6 +1,8 @@
 ---
 name: coach
 description: DSA practice, uni study help, spaced repetition and interview technical prep. Use for "explain X", "quiz me", "help me practise" and study planning.
+role: Study and practice subagent
+workDescription: Uni study help, spaced repetition drills and practice quizzes. Use for "explain X", "quiz me", "help me practise" and study planning.
 model: sonnet
 tools:
   - Read

@@ -1,6 +1,7 @@
 ---
 name: scribe
 description: Drafts emails, messages and any correspondence in Zyad's voice. Use for every "draft a reply", "write an email", "respond to X" request.
+role: Correspondence subagent
 model: sonnet
 tools:
   - Read

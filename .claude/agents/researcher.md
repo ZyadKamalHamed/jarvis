@@ -1,6 +1,7 @@
 ---
 name: researcher
 description: Web research on any external question - companies, tools, prices, platforms, deadlines, technical questions. Use whenever the answer is not in local data.
+role: External research subagent
 model: sonnet
 tools:
   - WebSearch

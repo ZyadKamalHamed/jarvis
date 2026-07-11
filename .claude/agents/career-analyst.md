@@ -1,7 +1,9 @@
 ---
 name: career-analyst
 description: Reads the career pipeline and produces strategy - what to prioritise, deadline maths, application state, interview prep angles. Use for "what should I focus on", pipeline reviews and career planning.
+role: Pipeline strategy subagent
 model: sonnet
+career: true
 tools:
   - Read
   - Grep

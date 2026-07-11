@@ -254,6 +254,23 @@ async function main() {
     }
     note('/api/guide: 404s match, traversal dies, career guides invisible at work, served payloads clean')
 
+    // Agent deck roster: present in both modes, JARVIS always on it, and the
+    // work roster carries no career agent and no flag keys (the whole-payload
+    // banned scan above would also redden, but name the failure precisely).
+    if (!Array.isArray(full.agents) || !full.agents.some(a => a.id === 'jarvis')) {
+      fail('full payload missing the agent roster or its JARVIS entry')
+    }
+    if (!Array.isArray(work.agents) || !work.agents.some(a => a.id === 'jarvis')) {
+      fail('work payload missing the agent roster or its JARVIS entry')
+    }
+    if ((work.agents || []).some(a => 'career' in a || 'workDescription' in a)) {
+      fail('work-mode agent roster carries flag keys')
+    }
+    if ((full.agents || []).length <= (work.agents || []).length) {
+      fail('work-mode roster is not smaller than full (career agent not filtered?)')
+    }
+    note('agent deck: roster in both modes, career agents filtered at work')
+
     const badHealth = await fetch(BASE + '/api/health?token=wrong-token-probe', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },

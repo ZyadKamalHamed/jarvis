@@ -142,6 +142,7 @@ function renderAll() {
   renderStudy()
   renderFitness()
   renderWork()
+  renderAgents()
   tickClock()
 }
 
@@ -663,6 +664,136 @@ async function speak(text, force = false) {
 }
 
 // ---------- ask ----------
+
+// ---------- agent deck ----------
+// Blue hologram figures, one per agent, projected from pads. Pure inline SVG:
+// every silhouette shares the same userSpaceOnUse gradient (bright at the
+// head, dissolving at the feet, the way a projection should). Duplicate
+// gradient ids across figures are safe because the definitions are identical.
+
+const HOLO_DEFS = `<defs><linearGradient id="hg" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="118">
+  <stop offset="0" stop-color="#8feaff" stop-opacity=".95"/>
+  <stop offset=".55" stop-color="#17d4fe" stop-opacity=".72"/>
+  <stop offset="1" stop-color="#17d4fe" stop-opacity="0"/>
+</linearGradient></defs>`
+const holoSvg = inner => `<svg viewBox="0 0 80 120" aria-hidden="true">${HOLO_DEFS}<g fill="url(#hg)">${inner}</g></svg>`
+const BODY = '<circle cx="40" cy="14" r="8"/><path d="M28 30 Q40 25 52 30 L55 76 Q40 84 25 76 Z"/><path d="M33 78 L47 78 L42 108 L38 108 Z"/>'
+
+const FIGURES = {
+  butler: holoSvg(
+    '<circle cx="40" cy="14" r="8"/>'
+    + '<path d="M34 26 L40 29 L46 26 L46 33 L40 30 L34 33 Z"/>' // bowtie
+    + '<path d="M28 30 Q40 25 52 30 L56 76 Q40 84 24 76 Z"/>'
+    + '<path d="M26 76 L33 76 L28 106 Z"/><path d="M54 76 L47 76 L52 106 Z"/>' // tailcoat
+    + '<path d="M52 36 L66 30 L67 34 L54 42 Z"/>' // tray arm
+    + '<path d="M58 26 L80 26 L79 29 L59 29 Z"/><path d="M62 26 Q69 17 76 26 Z"/><circle cx="69" cy="15" r="1.8"/>' // tray + cloche
+  ),
+  herald: holoSvg(
+    BODY
+    + '<path d="M50 36 L60 18 L64 21 L54 42 Z"/>' // raised arm
+    + '<circle cx="64" cy="12" r="5.5"/>'
+    + '<path d="M64 2 V5.2 M64 18.8 V22 M54 12 H57.2 M70.8 12 H74 M57 5 L59.4 7.4 M68.6 16.6 L71 19 M71 5 L68.6 7.4 M59.4 16.6 L57 19" stroke="url(#hg)" stroke-width="1.8" stroke-linecap="round" fill="none"/>' // sun rays
+  ),
+  tinker: holoSvg(
+    BODY
+    + '<path d="M50 40 L60 42 L59 47 L49 46 Z"/>' // arm to gear
+    + '<circle cx="66" cy="44" r="7"/>'
+    + '<path d="M64 33 h4 v4 h-4 Z M64 51 h4 v4 h-4 Z M55 42 h4 v4 h-4 Z M73 42 h4 v4 h-4 Z"/>' // teeth
+    + '<circle cx="66" cy="44" r="2.6" fill="#02060d"/>' // hub
+  ),
+  sprinter: holoSvg(
+    '<circle cx="48" cy="16" r="8"/>'
+    + '<path d="M38 30 Q50 24 60 32 L52 68 Q40 74 30 64 Z"/>' // leaning torso
+    + '<path d="M44 66 L62 84 L58 89 L40 72 Z"/><path d="M34 62 L18 80 L22 85 L38 70 Z"/>' // legs
+    + '<path d="M56 36 L70 44 L67 49 L54 42 Z"/>' // forward arm
+    + '<path d="M6 36 H22 M2 48 H18 M8 60 H24" stroke="url(#hg)" stroke-width="2" stroke-linecap="round" fill="none" opacity=".6"/>' // speed lines
+    + '<circle cx="14" cy="20" r="5.5"/><path d="M14 20 V16.4 M14 20 H17" stroke="#02060d" stroke-width="1.6" fill="none"/>' // clock
+  ),
+  scribe: holoSvg(
+    '<path d="M30 17 Q40 2 50 17 Q50 25 40 25 Q30 25 30 17 Z"/>' // hood
+    + '<circle cx="40" cy="18" r="4.5" fill="#02060d" opacity=".5"/>' // shadowed face
+    + '<path d="M28 30 Q40 25 52 30 L55 76 Q40 84 25 76 Z"/><path d="M33 78 L47 78 L42 108 L38 108 Z"/>'
+    + '<path d="M50 40 L58 44 L56 49 L48 45 Z"/>' // arm
+    + '<rect x="54" y="44" width="20" height="5" rx="2.5"/><circle cx="54" cy="46.5" r="3"/><circle cx="74" cy="46.5" r="3"/>' // scroll
+    + '<path d="M66 36 L74 22 L70 37 Z"/>' // quill
+  ),
+  researcher: holoSvg(
+    BODY
+    + '<path d="M50 36 L58 30 L61 34 L53 42 Z"/>' // raised arm
+    + '<circle cx="65" cy="26" r="7" fill="none" stroke="url(#hg)" stroke-width="2.5"/>' // lens
+    + '<path d="M69 32 L75 42 L71.5 44.5 L66 35 Z"/>' // handle
+  ),
+  coach: holoSvg(
+    BODY
+    + '<path d="M48 32 L52 24 L56 26 L52 36 Z"/>' // whistle arm
+    + '<path d="M54 20 L62 18 L62 24 Q58 27 54 25 Z"/>' // whistle
+    + '<path d="M30 40 L22 44 L24 49 L32 45 Z"/>' // watch arm
+    + '<circle cx="19" cy="48" r="5.5"/><rect x="17.5" y="40.5" width="3" height="3"/><path d="M19 48 V44.4" stroke="#02060d" stroke-width="1.6" fill="none"/>' // stopwatch
+  ),
+  analyst: holoSvg(
+    BODY
+    + '<path d="M38 30 L42 30 L41.5 44 L40 48 L38.5 44 Z"/>' // tie
+    + '<path d="M50 42 L58 52 L54.5 55.5 L47 47 Z"/>' // arm down
+    + '<rect x="54" y="54" width="20" height="14" rx="2"/>'
+    + '<path d="M60 54 v-4 h8 v4" fill="none" stroke="url(#hg)" stroke-width="2"/>' // handle
+    + '<path d="M54 61 H74" stroke="#02060d" stroke-width="1" opacity=".5" fill="none"/>' // clasp
+  ),
+  spark: holoSvg(
+    BODY
+    + '<path d="M64 18 L68 23 L64 28 L60 23 Z"/>' // unassigned marker
+  ),
+}
+
+let selectedAgent = null
+
+function renderAgents() {
+  const box = $('#agent-deck')
+  const list = DATA.agents || []
+  if (!list.length) {
+    box.innerHTML = '<p class="empty">No agents reporting.</p>'
+    $('#agents-chip').textContent = ''
+    $('#agent-dossier').hidden = true
+    return
+  }
+  $('#agents-chip').textContent = list.length + ' ONLINE'
+  // JARVIS stands centre and taller; the rest fan out around him.
+  const jarvis = list.find(a => a.id === 'jarvis')
+  const rest = list.filter(a => a.id !== 'jarvis')
+  const half = Math.ceil(rest.length / 2)
+  const ordered = jarvis ? [...rest.slice(0, half), jarvis, ...rest.slice(half)] : rest
+  box.innerHTML = ordered.map((a, i) => `
+    <button class="holo ${a.id === 'jarvis' ? 'holo-main' : ''} ${a.id === selectedAgent ? 'sel' : ''}"
+      data-agent="${esc(a.id)}" style="--d:-${(i * 0.7).toFixed(1)}s" title="${esc(a.name)}: ${esc(a.role)}">
+      ${FIGURES[a.figure] || FIGURES.spark}
+      <span class="holo-pad"></span>
+      <span class="holo-name">${esc(a.name)}</span>
+    </button>`).join('')
+  renderDossier()
+}
+
+function renderDossier() {
+  const el = $('#agent-dossier')
+  const a = (DATA.agents || []).find(x => x.id === selectedAgent)
+  if (!a) { el.hidden = true; el.innerHTML = ''; return }
+  el.hidden = false
+  el.innerHTML = `
+    <div class="dossier-head">
+      <span class="dossier-name">${esc(a.name)}</span>
+      <span class="chip">${esc(a.role)}</span>
+      <span class="chip">MODEL: ${esc(a.model)}</span>
+    </div>
+    <p class="dossier-desc">${esc(a.description)}</p>
+    <div class="dossier-tools">${(a.tools || []).map(t => `<span class="chip">${esc(t)}</span>`).join('')}</div>`
+}
+
+$('#agent-deck').addEventListener('click', e => {
+  const b = e.target.closest('.holo')
+  if (!b) return
+  selectedAgent = selectedAgent === b.dataset.agent ? null : b.dataset.agent
+  renderAgents()
+  const a = (DATA.agents || []).find(x => x.id === selectedAgent)
+  if (a) speak(a.id === 'jarvis' ? 'At your service, sir.' : `${a.name}. ${a.role}.`)
+})
 
 // Core /api/ask transport. POSTs the question, feeds accumulated text to
 // onDelta as claude streams it, and returns { j, streamedText } where j is

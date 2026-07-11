@@ -139,6 +139,13 @@ function stripCareer(payload) {
   if (out.todos) {
     out.todos = out.todos.filter(t => !t.career).map(({ career, ...rest }) => rest)
   }
+  if (out.agents) {
+    // agentsRoster already filters by mode; this repeats it at the chokepoint
+    // so a future unmoded call cannot leak the deck.
+    out.agents = out.agents
+      .filter(a => !a.career)
+      .map(({ career, workDescription, ...rest }) => ({ ...rest, description: workDescription || rest.description }))
+  }
   // Captured thoughts are free text and cannot be auto-classified; the whole
   // inbox stays out of work mode (capturing still works there, write-only).
   delete out.inbox
@@ -151,6 +158,87 @@ function stripCareer(payload) {
 }
 
 const GUIDES_DIR = path.join(ROOT, 'guides')
+const AGENTS_DIR = path.join(ROOT, '.claude', 'agents')
+
+// The agent deck roster. Subagents parse live from .claude/agents/*.md
+// frontmatter so the deck never drifts from reality; the head agent and the
+// launchd jobs are configured in code and plists, so their entries live here
+// with honest strings. figure names map to hologram silhouettes in the HUD.
+const BUILTIN_AGENTS = [
+  {
+    id: 'jarvis', name: 'J.A.R.V.I.S.', figure: 'butler',
+    role: 'Head agent and voice of the house', model: 'subscription default',
+    tools: ['Repo read/write', 'bin/ scripts', 'git', 'WebSearch', 'Subagent delegation', 'Session memory'],
+    description: 'The one you talk to. Every ask from the prompt bar runs as a claude -p session with per-mode daily memory; he answers in persona and delegates specialist work to the others on this deck. In work mode he answers tool-less from the stripped snapshot and the work-safe memory file.',
+  },
+  {
+    id: 'daily-run', name: 'Daily Run', figure: 'herald',
+    role: 'The 7:30am briefing agent', model: 'subscription default',
+    tools: ['Module refresh scripts', 'Repo writes', 'WebSearch', 'Draft writing', 'Tab opening (full mode)', 'Telegram ping'],
+    description: 'Wakes before you do. Refreshes every module, checks that links answer, writes any drafts the day needs, composes the day plan and the briefing, renders the voice track and pings your phone when it is ready. launchd fires it at 7:30 each morning.',
+  },
+  {
+    id: 'evolve', name: 'Evolve', figure: 'tinker',
+    role: 'The 9:30pm self-improvement loop', model: 'subscription default',
+    tools: ['Repo writes', 'git commit loop', 'bin/selfcheck.mjs', 'Nightly backups'],
+    description: 'Reads the day\'s feedback and telemetry, makes one small verified improvement, passes selfcheck, commits, and reports through the While You Slept section. It may strengthen stealth, never relax it.',
+  },
+  {
+    id: 'catchup', name: 'Catchup', figure: 'sprinter',
+    role: 'The half-hourly safety net', model: 'none (shell script)',
+    tools: ['launchd StartInterval', 'Per-job locks', 'Network wait'],
+    description: 'A launchd sweeper, not a mind. Every thirty minutes it checks what the day still owes: no briefing after 7:30, no evolve run after 21:30, and starts the missing job. Offline mornings cost half an hour, not the day.',
+  },
+]
+
+const AGENT_FIGURES = { scribe: 'scribe', researcher: 'researcher', coach: 'coach', 'career-analyst': 'analyst' }
+
+function parseAgentFrontmatter(text) {
+  // Minimal YAML-ish reader for the frontmatter shape these files use:
+  // scalar "key: value" lines plus one "tools:" block of "- item" lines.
+  const m = text.match(/^---\n([\s\S]*?)\n---/)
+  if (!m) return null
+  const out = { tools: [] }
+  let inTools = false
+  for (const line of m[1].split('\n')) {
+    const item = line.match(/^\s+-\s+(.+)$/)
+    if (inTools && item) { out.tools.push(item[1].trim()); continue }
+    const kv = line.match(/^([\w-]+):\s*(.*)$/)
+    if (!kv) continue
+    inTools = kv[1] === 'tools'
+    if (!inTools) out[kv[1]] = kv[2].trim()
+  }
+  return out.name ? out : null
+}
+
+async function agentsRoster(mode) {
+  const roster = BUILTIN_AGENTS.map(a => ({ ...a }))
+  try {
+    for (const f of (await fsp.readdir(AGENTS_DIR)).sort()) {
+      if (!f.endsWith('.md')) continue
+      const fm = parseAgentFrontmatter(await fsp.readFile(path.join(AGENTS_DIR, f), 'utf8'))
+      if (!fm) continue
+      roster.push({
+        id: fm.name,
+        name: fm.name,
+        figure: AGENT_FIGURES[fm.name] || 'spark',
+        role: fm.role || 'Specialist subagent',
+        model: fm.model || 'inherited',
+        tools: fm.tools,
+        description: fm.description || '',
+        workDescription: fm.workDescription,
+        career: fm.career === 'true',
+      })
+    }
+  } catch { /* no agents dir is a valid state */ }
+  if (mode !== 'work') return roster.map(({ workDescription, ...a }) => a)
+  // Work mode: career agents vanish entirely; survivors swap in their
+  // work-safe description and shed the flag keys (the key names themselves
+  // are banned words, same reasoning as proposals).
+  return roster
+    .filter(a => !a.career)
+    .map(({ career, workDescription, ...a }) => ({ ...a, description: workDescription || a.description }))
+}
 
 async function guidesIndex() {
   // Walkthrough guides live one JSON per file in guides/. The index maps each
@@ -205,6 +293,7 @@ async function aggregate(mode) {
   const inbox = (await readJson(INBOX_FILE, [])) || []
   payload.inbox = inbox.filter(i => !i.done && !i.selfcheck).slice(-20)
   payload.dailyJob = { running: fs.existsSync(DAILY_LOCK) } // stripped in work mode
+  payload.agents = await agentsRoster(mode) // already mode-filtered at source
   return mode === 'work' ? stripCareer(payload) : payload
 }
 
