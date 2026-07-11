@@ -538,6 +538,44 @@ body[data-focus="1"] #panel-focus, body[data-focus="1"] #panel-uni { display: bl
 /* ---------- Help overlay ---------- */
 .help-body { font-family: var(--font-mono); font-size: 12px; line-height: 2.1; }
 .help-body b { color: var(--cyan); font-weight: 400; margin-right: 6px; }
+.help-h {
+  margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--faint);
+  color: var(--dim); font-size: 10px; letter-spacing: .22em;
+}
+.help-body .help-h:first-child { margin-top: 0; padding-top: 0; border-top: none; }
+
+/* ---------- Guided walkthroughs ---------- */
+.guide { max-height: 72vh; z-index: 31; }
+.guide-progress { display: flex; gap: 6px; margin-bottom: 8px; }
+.guide-body { flex: 1; }
+.guide-step { padding: 9px 0; border-bottom: 1px dashed var(--faint); }
+.guide-step-head { font-family: var(--font-mono); font-size: 11px; letter-spacing: .14em; color: var(--dim); text-transform: uppercase; }
+.guide-step.current .guide-step-head { color: var(--cyan); }
+.guide-step.done .guide-step-head { color: var(--green); opacity: .7; }
+.guide-step-body { margin-top: 6px; color: #cdeefb; font-size: 14px; line-height: 1.55; white-space: pre-wrap; }
+.guide-cmd {
+  display: flex; align-items: center; gap: 8px; margin-top: 7px; padding: 7px 9px;
+  background: rgba(23,212,254,.05); border-left: 2px solid var(--cyan); overflow-x: auto;
+}
+.guide-cmd code { font-family: var(--font-mono); font-size: 11.5px; color: var(--cyan-soft); white-space: pre; flex: 1; }
+.guide-complete { padding: 12px 0 4px; color: var(--green); font-size: 14.5px; }
+.guide-foot {
+  border-top: 1px solid var(--hairline); margin-top: 10px; padding-top: 10px;
+  display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+}
+.guide-controls { display: flex; gap: 6px; }
+#guide-ask {
+  flex: 1; min-width: 180px; background: rgba(23,212,254,.04);
+  border: 1px solid var(--hairline); color: #cdeefb; font: inherit; font-size: 13.5px;
+  padding: 6px 9px; outline: none;
+}
+#guide-ask:focus { border-color: var(--cyan); }
+.guide-qa-row { margin-top: 8px; padding: 8px 10px; background: rgba(23,212,254,.04); border-left: 2px solid var(--hairline); }
+.guide-q { color: var(--cyan-soft); font-size: 12.5px; font-weight: 600; margin-bottom: 4px; }
+.guide-a { color: #cdeefb; font-size: 13.5px; line-height: 1.5; white-space: pre-wrap; }
+@media (max-width: 720px) {
+  .guide { max-height: 80vh; bottom: 12px; }
+}
 
 /* ---------- Volume mixer ---------- */
 .mixer {

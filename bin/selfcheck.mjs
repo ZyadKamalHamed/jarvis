@@ -59,6 +59,41 @@ function checkWorkMemory() {
   note('work-mode memory file is clean')
 }
 
+function checkGuides() {
+  // Walkthrough guides render on the HUD, voice lines included, so any guide
+  // not flagged career must pass the same banned-terms bar as the payload.
+  // Structure is checked too: a step without body or voice renders broken.
+  const dir = path.join(ROOT, 'guides')
+  if (!fs.existsSync(dir)) { note('no guides directory yet'); return }
+  for (const f of fs.readdirSync(dir)) {
+    if (!f.endsWith('.json')) continue
+    let g
+    try {
+      g = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'))
+    } catch (e) {
+      fail(`guides/${f} does not parse: ${e.message}`)
+      continue
+    }
+    if (!g.title || !g.todoId || !Array.isArray(g.steps) || !g.steps.length) {
+      fail(`guides/${f} missing title/todoId/steps`)
+      continue
+    }
+    for (const [i, s] of g.steps.entries()) {
+      if (!s.title || !s.body || !s.voice) fail(`guides/${f} step ${i + 1} missing title/body/voice`)
+    }
+    if (!g.career) {
+      // The career flag key itself contains a banned term; the server strips
+      // it before serving, so scan everything except that one key.
+      const { career, ...scannable } = g
+      const blob = JSON.stringify(scannable).toLowerCase()
+      for (const term of BANNED) {
+        if (blob.includes(term)) fail(`guides/${f} is work-visible but leaks banned term: "${term}"`)
+      }
+    }
+  }
+  note('guide files parse, steps complete, work-visible ones clean')
+}
+
 async function waitForServer(child) {
   for (let i = 0; i < 40; i++) {
     if (child.exitCode !== null) throw new Error('server exited ' + child.exitCode)
@@ -75,6 +110,7 @@ async function main() {
   console.log('JARVIS selfcheck')
   checkDataFiles()
   checkWorkMemory()
+  checkGuides()
 
   const modeFile = path.join(ROOT, 'data', 'mode.json')
   const modeBefore = fs.existsSync(modeFile) ? fs.readFileSync(modeFile, 'utf8') : null
@@ -173,6 +209,50 @@ async function main() {
       if (r.status !== 404) fail('/api/dismiss unknown id not 404 in ' + (q ? 'work' : 'full') + ' mode (got ' + r.status + ')')
     }
     note('/api/dismiss: unknown id answers 404 in both modes (no probe oracle)')
+
+    // /api/guide mirrors the dismiss contract: career guides answer 404 in
+    // work mode, identical to a missing guide, so the endpoint cannot confirm
+    // one exists. Malformed ids die before touching the filesystem.
+    for (const q of ['', '?work=1']) {
+      const r = await fetch(BASE + '/api/guide' + (q ? q + '&' : '?') + 'id=selfcheck-no-such-guide')
+      if (r.status !== 404) fail('/api/guide unknown id not 404 in ' + (q ? 'work' : 'full') + ' mode (got ' + r.status + ')')
+    }
+    const trav = await fetch(BASE + '/api/guide?id=..%2Fdata%2Fmode')
+    if (trav.status !== 400) fail('/api/guide traversal id not rejected (got ' + trav.status + ')')
+    const guidesDir = path.join(ROOT, 'guides')
+    const probeGuide = path.join(guidesDir, 'selfcheck-career-probe.json')
+    fs.mkdirSync(guidesDir, { recursive: true })
+    fs.writeFileSync(probeGuide, JSON.stringify({
+      title: 'probe', todoId: 'selfcheck-none', career: true,
+      steps: [{ title: 't', body: 'b', voice: 'v' }],
+    }))
+    try {
+      const gWork = await fetch(BASE + '/api/guide?work=1&id=selfcheck-career-probe')
+      if (gWork.status !== 404) fail('career guide visible in work mode (got ' + gWork.status + ')')
+      const gFull = await fetch(BASE + '/api/guide?id=selfcheck-career-probe')
+      if (gFull.status !== 200) fail('career guide not served in full mode (got ' + gFull.status + ')')
+    } finally {
+      fs.unlinkSync(probeGuide)
+    }
+    const careerSlugs = fs.existsSync(guidesDir)
+      ? fs.readdirSync(guidesDir).filter(f => f.endsWith('.json')).filter(f => {
+          try { return !!JSON.parse(fs.readFileSync(path.join(guidesDir, f), 'utf8')).career } catch { return false }
+        }).map(f => f.slice(0, -5))
+      : []
+    if ((work.todos || []).some(t => t.guide && careerSlugs.includes(t.guide))) {
+      fail('career guide annotated on a work-mode todo')
+    }
+    // And the wire itself: every guide that serves in work mode must be clean
+    // end to end, exactly as the office screen would receive it.
+    for (const f of fs.readdirSync(guidesDir).filter(f => f.endsWith('.json'))) {
+      const slug = f.slice(0, -5)
+      if (careerSlugs.includes(slug)) continue
+      const served = (await (await fetch(BASE + '/api/guide?work=1&id=' + slug)).text()).toLowerCase()
+      for (const term of BANNED) {
+        if (served.includes(term)) fail(`work-mode /api/guide ${slug} response leaks banned term: "${term}"`)
+      }
+    }
+    note('/api/guide: 404s match, traversal dies, career guides invisible at work, served payloads clean')
 
     const badHealth = await fetch(BASE + '/api/health?token=wrong-token-probe', {
       method: 'POST',

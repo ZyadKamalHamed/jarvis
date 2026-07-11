@@ -25,6 +25,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 CACHE = ROOT / ".cache" / "msal_cache.json"
 SCOPES = ["Mail.Read"]
+# login --send consents to these; incremental consent on the same client id
+# upgrades the cached refresh token, and plain Mail.Read fetches keep working.
+SEND_SCOPES = ["Mail.Read", "Mail.ReadWrite", "Mail.Send"]
 AUTHORITY = "https://login.microsoftonline.com/consumers"
 
 
@@ -62,17 +65,17 @@ def save_cache(cache):
         os.chmod(CACHE, 0o600)
 
 
-def get_token(interactive):
+def get_token(interactive, scopes=SCOPES):
     app, cache = get_app()
     accounts = app.get_accounts()
     if accounts:
-        result = app.acquire_token_silent(SCOPES, account=accounts[0])
+        result = app.acquire_token_silent(scopes, account=accounts[0])
         if result and "access_token" in result:
             save_cache(cache)
             return result["access_token"]
     if not interactive:
         sys.exit("No cached login. Run: python3 bin/outlook.py login")
-    flow = app.initiate_device_flow(scopes=SCOPES)
+    flow = app.initiate_device_flow(scopes=scopes)
     if "user_code" not in flow:
         sys.exit("Device flow failed: " + json.dumps(flow))
     print(flow["message"])  # go to microsoft.com/devicelogin, enter the code
@@ -118,9 +121,11 @@ def fetch():
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else "fetch"
     if cmd == "login":
-        get_token(interactive=True)
-        print("Login cached. Headless fetches will work now.")
+        scopes = SEND_SCOPES if "--send" in sys.argv[2:] else SCOPES
+        get_token(interactive=True, scopes=scopes)
+        extra = " Draft and send scopes granted." if scopes is SEND_SCOPES else ""
+        print("Login cached. Headless fetches will work now." + extra)
     elif cmd == "fetch":
         fetch()
     else:
-        sys.exit("usage: outlook.py [login|fetch]")
+        sys.exit("usage: outlook.py [login [--send]|fetch]")

@@ -54,7 +54,7 @@
     <button class="rail-btn" id="focus-btn" title="Focus mode: uni panel and a pomodoro, nothing else">FOCUS</button>
     <button class="rail-btn" id="log-btn" title="Conversation log">LOG</button>
     <button class="rail-btn" id="vol-btn" title="Volume mixer">VOL</button>
-    <button class="rail-btn" id="help-btn" title="Keyboard shortcuts (?)">KEYS</button>
+    <button class="rail-btn" id="help-btn" title="Help: shortcuts and commands (? or Cmd+/)">HELP</button>
     <button class="rail-btn" id="audio-toggle" title="Sound">SND ON</button>
     <div class="clock">
       <span id="clock-time">--:--</span>
@@ -187,20 +187,45 @@
 </div>
 
 <div id="help" class="convo" hidden>
-  <div class="answer-head"><span>SHORTCUTS</span><button id="help-close">×</button></div>
+  <div class="answer-head"><span>HELP</span><button id="help-close">×</button></div>
   <div class="convo-body help-body">
+    <div class="help-h">KEYBOARD</div>
     <div><b>Cmd/Ctrl K</b> command palette</div>
-    <div><b>Esc</b> silence, close overlays, leave focus mode</div>
-    <div><b>?</b> this help, or the KEYS button</div>
+    <div><b>Cmd F</b> focus mode on and off</div>
+    <div><b>Cmd L</b> conversation log</div>
+    <div><b>Cmd U</b> volume mixer</div>
+    <div><b>Cmd S</b> sound on and off</div>
+    <div><b>Cmd P</b> music play and pause</div>
+    <div><b>Cmd E</b> next track</div>
+    <div><b>Cmd / or ?</b> this help</div>
     <div><b>M</b> mic on, M again to send</div>
-    <div><b>FOCUS</b> rail button: uni panel plus pomodoro, nothing else</div>
+    <div><b>Esc</b> silence, close overlays, leave focus mode</div>
+    <div class="help-h">COMMANDS (typed into the prompt)</div>
+    <div><b>in: &lt;thought&gt;</b> capture it; the morning run files it where it belongs</div>
+    <div><b>win: &lt;what happened&gt;</b> log a win to the record (review ammunition)</div>
+    <div><b>fb: &lt;request&gt;</b> file an improvement for tonight's evolve cycle</div>
+    <div><b>anything else</b> is a question straight to me</div>
+    <div class="help-h">BUTTONS</div>
+    <div><b>FOCUS</b> uni panel plus pomodoro, nothing else</div>
     <div><b>SPEAK</b> reads the briefing and opens its tabs</div>
     <div><b>VOL</b> mixer: levels plus the voice engine (ElevenLabs or Mac)</div>
     <div><b>LOG</b> conversation record, &#9654; replays any reply aloud</div>
-    <div><b>in:</b> prefix captures a thought for the morning run</div>
-    <div><b>win:</b> prefix logs a personal win to the record</div>
-    <div><b>fb:</b> prefix files an improvement request for tonight</div>
     <div><b>MIC</b> push to talk, goes quiet to send</div>
+    <div><b>&#9654; WALKTHROUGH</b> on an operator task: I guide you step by step</div>
+  </div>
+</div>
+
+<div id="guide" class="convo guide" hidden>
+  <div class="answer-head"><span id="guide-title">WALKTHROUGH</span><button id="guide-close">×</button></div>
+  <div class="guide-progress" id="guide-progress"></div>
+  <div class="convo-body guide-body" id="guide-body"></div>
+  <div class="guide-foot">
+    <div class="guide-controls">
+      <button class="act-btn" id="guide-back">BACK</button>
+      <button class="act-btn yes" id="guide-next">NEXT</button>
+      <button class="act-btn" id="guide-restart" title="Back to step one">RESTART</button>
+    </div>
+    <input id="guide-ask" placeholder="Ask about this step... (Enter)" autocomplete="off" spellcheck="false">
   </div>
 </div>
 

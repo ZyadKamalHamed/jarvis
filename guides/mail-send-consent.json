@@ -1,0 +1,40 @@
+{
+  "id": "mail-send-consent",
+  "title": "Upgrade mail powers: drafts in Outlook",
+  "todoId": "mail-send-consent",
+  "career": false,
+  "est": "5 minutes",
+  "intro": "Five steps to upgrade my mail powers from reading to drafting, sir.",
+  "steps": [
+    {
+      "title": "What this unlocks",
+      "body": "Today I read your personal Outlook inbox and write drafts to local files only. One permission upgrade lets me file drafts straight into Outlook's Drafts folder, and later send, only ever after you explicitly confirm each one. Nothing auto-sends; that rule is permanent.",
+      "voice": "Step one is just context. This upgrade lets me file drafts in Outlook itself. Sending stays behind your explicit confirmation, always."
+    },
+    {
+      "title": "Open Terminal",
+      "body": "On this Mac, open Terminal and go to the JARVIS folder.",
+      "command": "cd ~/Coding/JARVIS",
+      "voice": "Step two. Open Terminal and change into the JARVIS folder."
+    },
+    {
+      "title": "Run the consent command",
+      "body": "Run the command below. It prints a short code and a Microsoft link. This re-uses the app you registered originally; it only widens what the saved login may do. Reading stays, writing drafts and sending are added.",
+      "command": ".venv-jarvis/bin/python bin/outlook.py login --send",
+      "voice": "Step three. Run the login command with the send flag. It will print a code."
+    },
+    {
+      "title": "Approve it in the browser",
+      "body": "Open microsoft.com/devicelogin, enter the code, and sign in as zyad2408@live.com.au. Approve the requested permissions. Back in Terminal you should see: Login cached.",
+      "url": "https://microsoft.com/devicelogin",
+      "voice": "Step four. Enter the code at the Microsoft device login page, sign in, and approve."
+    },
+    {
+      "title": "Tell the night shift",
+      "body": "Type the line below into my prompt so tonight's improvement cycle wires up the draft and send commands against the new permissions.",
+      "command": "fb: mail send scopes granted, wire outlook draft and send",
+      "voice": "Last step. File the feedback line so the wiring gets built tonight. That is all, sir."
+    }
+  ],
+  "outro": "Consent captured. The plumbing follows shortly."
+}

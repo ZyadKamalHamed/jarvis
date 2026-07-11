@@ -150,6 +150,27 @@ function stripCareer(payload) {
   return out
 }
 
+const GUIDES_DIR = path.join(ROOT, 'guides')
+
+async function guidesIndex() {
+  // Walkthrough guides live one JSON per file in guides/. The index maps each
+  // to its operator todo so the HUD can show a start button on the board.
+  try {
+    const files = await fsp.readdir(GUIDES_DIR)
+    const out = []
+    for (const f of files) {
+      if (!f.endsWith('.json')) continue
+      const g = await readJson(path.join(GUIDES_DIR, f))
+      if (g?.todoId && Array.isArray(g.steps) && g.steps.length) {
+        out.push({ slug: f.slice(0, -5), todoId: g.todoId, career: !!g.career })
+      }
+    }
+    return out
+  } catch {
+    return []
+  }
+}
+
 async function aggregate(mode) {
   const payload = { generatedAt: new Date().toISOString(), mode }
   await Promise.all(
@@ -172,6 +193,13 @@ async function aggregate(mode) {
   payload.evolution = await readJson(path.join(DATA, 'evolution.json'))
   payload.proposals = (await readJson(path.join(DATA, 'proposals.json'), [])) || []
   payload.todos = (await readJson(path.join(DATA, 'todos.json'), [])) || []
+  // Annotate todos that have a guided walkthrough. Career-flagged guides
+  // never annotate in work mode, so the button cannot appear there at all.
+  const guides = await guidesIndex()
+  for (const t of payload.todos) {
+    const g = guides.find(g => g.todoId === t.id && !(mode === 'work' && g.career))
+    if (g) t.guide = g.slug
+  }
   payload.weather = await weatherPayload() // not career data; serves in both modes
   payload.calendar = await calendarPayload() // stripped whole in work mode
   const inbox = (await readJson(INBOX_FILE, [])) || []
@@ -877,6 +905,19 @@ const server = http.createServer(async (req, res) => {
       await writeJsonAtomic(DISMISSED_FILE, { date: brief.date, ids: next })
       notifyClients()
       return json(res, 200, { ok: true })
+    }
+    if (url.pathname === '/api/guide' && req.method === 'GET') {
+      // Guided walkthroughs for the operator board. Career guides answer 404
+      // in work mode, identical to a bad id: a 403 would confirm to a prober
+      // that a guide by that name exists (same reasoning as /api/dismiss).
+      const id = String(url.searchParams.get('id') || '')
+      if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(id)) return json(res, 400, { error: 'bad guide id' })
+      const g = await readJson(path.join(GUIDES_DIR, id + '.json'))
+      if (!g || (g.career && (await currentMode(url)) === 'work')) return json(res, 404, { error: 'unknown guide' })
+      // The flag key itself would leak the word "career" into a work-mode
+      // payload (same reasoning as proposals), and the client never needs it.
+      const { career, ...served } = g
+      return json(res, 200, served)
     }
     if (url.pathname === '/api/doc' && req.method === 'GET') {
       // Repo docs on the HUD. Blocked in work mode: the handover and plan

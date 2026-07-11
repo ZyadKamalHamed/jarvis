@@ -1,0 +1,80 @@
+{
+  "id": "home-laptop-migration",
+  "title": "Move the always-on brain to the home laptop",
+  "todoId": "home-laptop-migration",
+  "career": true,
+  "est": "60 to 90 minutes",
+  "intro": "The weekend job, sir. Twelve steps and the always-on brain moves home.",
+  "steps": [
+    {
+      "title": "Install the basics on the home laptop",
+      "body": "On the home laptop: install Node 18 or newer and git, install the Tailscale app and sign in with the same GitHub account as this Mac, ZyadKamalHamed. Same account or the two machines cannot see each other.",
+      "command": "brew install node git",
+      "voice": "Step one. Node, git and Tailscale on the home laptop, signed into the same tailnet."
+    },
+    {
+      "title": "Install Claude Code",
+      "body": "Install the CLI, then run claude once and log in with the Anthropic account on the subscription, not an API key.",
+      "command": "npm i -g @anthropic-ai/claude-code",
+      "voice": "Step two. Install Claude Code and log in on the subscription."
+    },
+    {
+      "title": "Clone the repo",
+      "body": "Authenticate GitHub, then clone the private repo into place.",
+      "command": "gh auth login && git clone https://github.com/ZyadKamalHamed/jarvis.git ~/Coding/JARVIS",
+      "voice": "Step three. Clone the private repo into Coding slash JARVIS."
+    },
+    {
+      "title": "Bundle the private data on THIS Mac",
+      "body": "data, drafts, .env and .cache never travel through git. On this Mac, run the migration script; it writes a tarball into your home folder.",
+      "command": "cd ~/Coding/JARVIS && bash bin/migrate-to-home.sh",
+      "voice": "Step four. On this Mac, run the migrate script to bundle the private data."
+    },
+    {
+      "title": "Send the bundle across the tailnet",
+      "body": "Find the laptop's tailnet name with tailscale status, then Taildrop the bundle across. It lands in the laptop's Downloads folder.",
+      "command": "tailscale file cp ~/jarvis-move-*.tgz <laptop-name>:",
+      "voice": "Step five. Taildrop the bundle to the laptop."
+    },
+    {
+      "title": "Unpack on the laptop",
+      "body": "Extract the bundle into the repo and rebuild the Python venv.",
+      "command": "cd ~/Coding/JARVIS && tar -xzf ~/Downloads/jarvis-move-*.tgz && python3 -m venv .venv-jarvis && .venv-jarvis/bin/pip install msal",
+      "voice": "Step six. Unpack the bundle and rebuild the venv."
+    },
+    {
+      "title": "Move AIOS too",
+      "body": "I read the AIOS data file every morning. Clone or copy ~/Coding/AIOS onto the laptop the same way, and plan to move its 7am scheduled task as well.",
+      "voice": "Step seven. AIOS comes along; I read its data every morning."
+    },
+    {
+      "title": "Register the LaunchAgents",
+      "body": "Copy all four plists and bootstrap them: the server, the 7:30 briefing, the 9:30 evolve, and the half-hourly catchup that makes missed mornings cost thirty minutes instead of the day. Check the node path inside com.zyad.jarvis.plist matches which node on that machine, and the /Users/Zyad paths if the username differs.",
+      "command": "cd ~/Coding/JARVIS && mkdir -p ~/Library/LaunchAgents && cp deploy/com.zyad.jarvis*.plist ~/Library/LaunchAgents/ && for p in ~/Library/LaunchAgents/com.zyad.jarvis*.plist; do launchctl bootstrap gui/$(id -u) \"$p\"; done",
+      "voice": "Step eight. Register the server and the three scheduled agents with launchd."
+    },
+    {
+      "title": "Trust the workspace for headless runs",
+      "body": "Run claude interactively inside ~/Coding/JARVIS once and accept the trust dialog. Without it, headless jobs run with no permissions and every write is denied. Then verify with the selftest below: the log must end JARVIS-LAUNCHD-OK with no trust warning.",
+      "command": "cd ~/Coding/JARVIS && bash bin/run-job.sh --selftest && tail -5 data/joblogs/selftest.log",
+      "voice": "Step nine. Trust the workspace, then run the selftest and check the log."
+    },
+    {
+      "title": "Expose the HUD to the tailnet",
+      "body": "Run go-mobile on the laptop, then update the phone's Home Screen app to point at the laptop's tailnet name instead of this Mac's.",
+      "command": "cd ~/Coding/JARVIS && bash bin/go-mobile.sh",
+      "voice": "Step ten. Serve the HUD on the laptop and repoint the phone bookmark."
+    },
+    {
+      "title": "Keep it awake",
+      "body": "System Settings, Displays, Advanced: prevent automatic sleeping on power when the display is off. Keep the laptop on power, and keep Tailscale in Login Items.",
+      "voice": "Step eleven. The brain must not sleep. Set it to stay awake on power."
+    },
+    {
+      "title": "Give the laptop its own Telegram bot",
+      "body": "The OpenClaw gateway stays on this Mac, so the laptop needs its own messenger for the morning ping: create a new bot with @BotFather, then put TELEGRAM_BOT_TOKEN=<token> and TELEGRAM_CHAT_ID=8343303630 into .env on the laptop. Do not reuse the OpenClaw bot token; two listeners on one token fight.",
+      "voice": "Step twelve. Give the laptop its own Telegram bot for the morning ping. Then I am home, sir."
+    }
+  ],
+  "outro": "Migration complete. This machine becomes a dev satellite and the laptop carries the mornings."
+}

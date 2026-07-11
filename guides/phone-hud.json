@@ -1,0 +1,42 @@
+{
+  "id": "phone-hud",
+  "title": "Put JARVIS on your phone",
+  "todoId": "phone-hud",
+  "career": false,
+  "est": "5 minutes",
+  "intro": "Very good, sir. Six short steps and I will be in your pocket.",
+  "steps": [
+    {
+      "title": "Install Tailscale",
+      "body": "On your iPhone, open the App Store and search for Tailscale. Install it. This is the private tunnel that lets the phone reach this machine; nothing gets exposed to the public internet.",
+      "voice": "Step one. On your iPhone, install Tailscale from the App Store."
+    },
+    {
+      "title": "Sign in with the same account",
+      "body": "Open Tailscale and sign in with GitHub as ZyadKamalHamed, the exact account this Mac uses. A different account lands on a different tailnet and the phone will never find me.",
+      "voice": "Step two. Sign in to Tailscale with GitHub, the same account this Mac uses."
+    },
+    {
+      "title": "Switch the VPN on",
+      "body": "Flip the toggle at the top of the Tailscale app. iOS will ask permission to add a VPN configuration; approve it. The switch should read Connected.",
+      "voice": "Step three. Flip the VPN toggle on and approve the configuration prompt."
+    },
+    {
+      "title": "Open the HUD in Safari",
+      "body": "In Safari, open the address below. Expect the boot screen; give it a second on first load.",
+      "url": "https://zyad-hamed.tailb73e19.ts.net:8443",
+      "voice": "Step four. Open the HUD address in Safari. The open button is on your screen."
+    },
+    {
+      "title": "Add to Home Screen",
+      "body": "Tap the Share button, then Add to Home Screen. You get the arc reactor icon and a full-screen app with no browser chrome.",
+      "voice": "Step five. Share, then Add to Home Screen."
+    },
+    {
+      "title": "Test it",
+      "body": "Open JARVIS from the new icon. If the DATA chip in the top rail shows a fresh timestamp, live data is flowing. Remember: the phone needs its Tailscale VPN on, and until the home laptop takes over, this Mac must be awake.",
+      "voice": "Last step. Open me from the icon and check the data chip is fresh. Then tick this off the board, sir."
+    }
+  ],
+  "outro": "Done. I am officially portable, sir."
+}

@@ -1,0 +1,33 @@
+{
+  "id": "calendar-access",
+  "title": "Grant Calendar access",
+  "todoId": "calendar-access",
+  "career": false,
+  "est": "2 minutes",
+  "intro": "Two minutes, sir. One command, one Allow click, and I can see your actual calendar.",
+  "steps": [
+    {
+      "title": "Why this is needed",
+      "body": "The morning run reads Calendar.app through a small helper. macOS only shows the permission prompt to a real app like Terminal; my build sandbox could not present it, so calendar status is stuck on denied.",
+      "voice": "Step one, context. macOS wants you, not me, to click the permission prompt."
+    },
+    {
+      "title": "Run the helper in Terminal",
+      "body": "Open Terminal (the real Terminal app) and run the command below. A macOS prompt should appear: Terminal would like to access your calendar. Click Allow, and choose Full Access if offered.",
+      "command": "cd ~/Coding/JARVIS && node bin/calendar.mjs",
+      "voice": "Step two. Run the calendar helper in Terminal and click Allow when macOS asks."
+    },
+    {
+      "title": "If no prompt appeared",
+      "body": "System Settings, Privacy and Security, Calendars: set Terminal to Full Access, then run the command from step two again.",
+      "voice": "Step three, only if the prompt never showed. Grant Terminal calendar access in System Settings and run it again."
+    },
+    {
+      "title": "Verify",
+      "body": "Run the check below. status should read ok and today's events list out. The HUD core panel picks them up on the next refresh, and every 7:30 briefing routes the day around real appointments from now on.",
+      "command": "head -20 ~/Coding/JARVIS/data/calendar.json",
+      "voice": "Step four. Check the calendar file says status ok. Then we are done, sir."
+    }
+  ],
+  "outro": "Calendar sighted. The day plan just got honest."
+}

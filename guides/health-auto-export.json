@@ -1,0 +1,42 @@
+{
+  "id": "health-auto-export",
+  "title": "Wire Apple Health into the fitness feed",
+  "todoId": "health-auto-export",
+  "career": false,
+  "est": "10 minutes",
+  "intro": "Six steps, sir, and my fitness telemetry goes from sample data to the real thing.",
+  "steps": [
+    {
+      "title": "Install Health Auto Export",
+      "body": "On the iPhone, install 'Health Auto Export - JSON+CSV' from the App Store. It reads Apple Health and pushes the numbers to me on a schedule.",
+      "voice": "Step one. Install Health Auto Export from the App Store."
+    },
+    {
+      "title": "Print your personal URL",
+      "body": "On this Mac, open Terminal and run the command below. It prints your webhook address including a secret token. Treat the URL like a password; anyone holding it can write to the fitness file.",
+      "command": "cd ~/Coding/JARVIS && bash bin/health-url.sh",
+      "voice": "Step two. Run the health URL script in Terminal and keep the printed address handy."
+    },
+    {
+      "title": "Create the automation",
+      "body": "In Health Auto Export: Automations tab, new automation, type REST API. Paste the URL from step two. Method POST, format JSON.",
+      "voice": "Step three. Create a REST API automation and paste your URL. Method POST, format JSON."
+    },
+    {
+      "title": "Choose the metrics",
+      "body": "Select Body Mass (weight), Dietary Energy, Protein, Carbohydrates and Total Fat. Aggregation daily. Tick more later if you like; I safely ignore anything I do not parse yet.",
+      "voice": "Step four. Tick weight, dietary energy, protein, carbs and fat."
+    },
+    {
+      "title": "Schedule it",
+      "body": "Set the automation to run daily. Evening is best so the full day's food is counted. The phone's Tailscale VPN must be on when it fires, same tunnel as the phone HUD.",
+      "voice": "Step five. Schedule it daily, in the evening, and keep Tailscale on."
+    },
+    {
+      "title": "Fire a test",
+      "body": "Use the automation's manual run button. Then check the Fitness panel here: the SAMPLE badge flips to HEALTH-AUTO-EXPORT and your real weight appears. If nothing lands, confirm the phone's VPN is on and the URL matches exactly.",
+      "voice": "Step six. Run it manually once and watch the fitness panel switch to live data."
+    }
+  ],
+  "outro": "Telemetry online. I will fold the numbers into every morning briefing, sir."
+}

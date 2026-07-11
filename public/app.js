@@ -294,6 +294,14 @@ document.addEventListener('click', async e => {
   const t = e.target.closest('.act-btn')
   if (!t) return
   if (t.dataset.url) openTarget(t.dataset.url)
+  else if (t.dataset.guide) openGuide(t.dataset.guide)
+  else if (t.dataset.copy) {
+    try {
+      await navigator.clipboard.writeText(t.dataset.copy)
+      t.textContent = 'COPIED'
+      setTimeout(() => { t.textContent = 'COPY' }, 1200)
+    } catch { t.textContent = 'SELECT IT' }
+  }
   else if (t.dataset.draft) showDraft(t.dataset.draft)
   else if (t.dataset.doc) showDoc(t.dataset.doc)
   else if (t.dataset.prop) {
@@ -407,7 +415,8 @@ function renderOps() {
         <div class="todo-title">${esc(t.title)}</div>
         <div class="todo-detail">${esc(t.detail || '')}</div>
         <div class="feed-actions">
-          ${t.doc ? `<button class="act-btn" data-doc="${esc(t.doc)}">GUIDE: ${esc(t.doc)}</button>` : ''}
+          ${t.guide ? `<button class="act-btn yes" data-guide="${esc(t.guide)}">&#9654; WALKTHROUGH</button>` : ''}
+          ${t.doc ? `<button class="act-btn" data-doc="${esc(t.doc)}">DOC: ${esc(t.doc)}</button>` : ''}
           ${t.url ? `<button class="act-btn" data-url="${esc(t.url)}">OPEN &#8599;</button>` : ''}
         </div>
       </div>
@@ -655,10 +664,10 @@ async function speak(text, force = false) {
 
 // ---------- ask ----------
 
-async function ask(question) {
-  const panel = $('#answer'), body = $('#answer-body')
-  panel.hidden = false
-  body.innerHTML = 'Processing<span class="cursor"></span>'
+// Core /api/ask transport. POSTs the question, feeds accumulated text to
+// onDelta as claude streams it, and returns { j, streamedText } where j is
+// the authoritative final verdict (interim tool narration gets replaced).
+async function askApi(question, onDelta) {
   let j = null
   let streamedText = ''
   try {
@@ -666,12 +675,9 @@ async function ask(question) {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ question, stream: true }),
     })
     if ((res.headers.get('content-type') || '').includes('text/event-stream')) {
-      // Words render as claude writes them; the done event carries the
-      // authoritative final answer (interim tool narration gets replaced).
       const reader = res.body.getReader()
       const dec = new TextDecoder()
       let buf = ''
-      let started = false
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
@@ -686,10 +692,8 @@ async function ask(question) {
           let data
           try { data = JSON.parse(dataLine) } catch { continue }
           if (ev === 'delta' && data.text) {
-            if (!started) { started = true; body.textContent = '' }
             streamedText += data.text
-            body.textContent = streamedText
-            body.scrollTop = body.scrollHeight
+            if (onDelta) onDelta(streamedText)
           } else if (ev === 'done') {
             j = data
           }
@@ -702,6 +706,19 @@ async function ask(question) {
   } catch (e) {
     j = { ok: false, error: e.message }
   }
+  return { j, streamedText }
+}
+
+async function ask(question) {
+  const panel = $('#answer'), body = $('#answer-body')
+  panel.hidden = false
+  body.innerHTML = 'Processing<span class="cursor"></span>'
+  let started = false
+  const { j, streamedText } = await askApi(question, text => {
+    if (!started) { started = true; body.textContent = '' }
+    body.textContent = text
+    body.scrollTop = body.scrollHeight
+  })
   const answer = j.ok ? (j.answer || streamedText) : 'Fault in the reasoning core: ' + (j.error || 'unknown')
   if (j.ok && streamedText && answer === streamedText) {
     body.textContent = answer // already on screen, do not retype
@@ -1040,13 +1057,154 @@ $('#help-btn').addEventListener('click', showHelp)
 $('#help-close').addEventListener('click', () => { $('#help').hidden = true })
 
 addEventListener('keydown', e => {
-  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); togglePalette() }
+  const mod = (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey
+  if (mod && e.key.toLowerCase() === 'k') { e.preventDefault(); togglePalette() }
+  // One chord per rail/player control. Modifier chords cannot type into an
+  // input, so these stay live even while the ask bar has focus.
+  else if (mod && e.key.toLowerCase() === 'f') { e.preventDefault(); $('#focus-btn').click() }
+  else if (mod && e.key.toLowerCase() === 'l') { e.preventDefault(); $('#log-btn').click() }
+  else if (mod && e.key.toLowerCase() === 'u') { e.preventDefault(); $('#vol-btn').click() }
+  else if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); $('#audio-toggle').click() }
+  else if (mod && e.key.toLowerCase() === 'p') { e.preventDefault(); $('#player-play').click() }
+  else if (mod && e.key.toLowerCase() === 'e') { e.preventDefault(); $('#player-next').click() }
+  else if (mod && e.key === '/') { e.preventDefault(); showHelp() }
   else if (e.key === '?' && !e.target.matches('input, textarea')) { e.preventDefault(); showHelp() }
   else if (e.key.toLowerCase() === 'm' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.target.matches('input, textarea') && !$('#mic').disabled) { e.preventDefault(); $('#mic').click() }
   else if (e.key === 'Escape') {
     if (!$('#palette').hidden) togglePalette(false)
     if (!$('#help').hidden) $('#help').hidden = true
+    if (!$('#guide').hidden) closeGuide()
   }
+})
+
+// ---------- guided walkthroughs ----------
+// A play button on an operator task opens a step-at-a-time overlay: I speak
+// each step, he does it, clicks NEXT. Progress survives a reload, and the
+// ask box answers questions about the current step with full step context.
+
+const guide = { slug: null, data: null, idx: 0 }
+const guideKey = slug => 'jarvis-guide-' + slug
+
+async function openGuide(slug) {
+  let g
+  try {
+    const res = await fetch('/api/guide?id=' + encodeURIComponent(slug) + (WORK_PARAM ? '&work=1' : ''))
+    if (!res.ok) throw new Error('guide ' + res.status)
+    g = await res.json()
+  } catch {
+    const panel = $('#answer'), body = $('#answer-body')
+    panel.hidden = false
+    body.textContent = 'That walkthrough is unavailable right now.'
+    return
+  }
+  guide.slug = slug
+  guide.data = g
+  const saved = parseInt(localStorage.getItem(guideKey(slug)) || '0', 10)
+  guide.idx = Number.isFinite(saved) ? Math.max(0, Math.min(saved, g.steps.length)) : 0
+  $('#guide').hidden = false
+  renderGuide()
+  const s = g.steps[guide.idx]
+  if (guide.idx >= g.steps.length) speak(g.outro)
+  else if (guide.idx === 0) speak([g.intro, s.voice].filter(Boolean).join(' '))
+  else speak('Picking up where you left off. ' + s.voice)
+}
+
+function closeGuide() {
+  $('#guide').hidden = true
+  stopSpeech()
+}
+
+function renderGuide() {
+  const g = guide.data
+  if (!g) return
+  const total = g.steps.length
+  const finished = guide.idx >= total
+  $('#guide-title').textContent = 'WALKTHROUGH: ' + g.title.toUpperCase()
+  $('#guide-progress').innerHTML = finished
+    ? '<span class="chip ok">COMPLETE</span>'
+    : `<span class="chip">STEP ${guide.idx + 1} / ${total}</span>${g.est ? `<span class="chip">${esc(g.est)}</span>` : ''}`
+  const block = (s, i) => `
+    <div class="guide-step ${i < guide.idx ? 'done' : i === guide.idx ? 'current' : ''}">
+      <div class="guide-step-head">${i < guide.idx ? '&#10003;' : (i + 1) + '.'} ${esc(s.title)}</div>
+      ${i === guide.idx ? `
+        <div class="guide-step-body">${esc(s.body)}</div>
+        ${s.command ? `<div class="guide-cmd"><code>${esc(s.command)}</code><button class="act-btn" data-copy="${esc(s.command)}">COPY</button></div>` : ''}
+        ${s.url ? `<div class="feed-actions"><button class="act-btn" data-url="${esc(s.url)}">OPEN &#8599;</button></div>` : ''}
+        <div class="guide-qa" id="guide-qa"></div>` : ''}
+    </div>`
+  $('#guide-body').innerHTML = g.steps.slice(0, Math.min(guide.idx + 1, total)).map(block).join('')
+    + (finished ? `<div class="guide-complete">All steps complete, sir.
+        <div class="feed-actions">
+          ${g.todoId ? '<button class="act-btn yes" id="guide-done-todo">MARK IT DONE ON THE BOARD</button>' : ''}
+        </div></div>` : '')
+  $('#guide-back').disabled = guide.idx === 0
+  $('#guide-next').textContent = finished ? 'CLOSE' : guide.idx === total - 1 ? 'FINISH' : 'NEXT'
+  const body = $('#guide-body')
+  body.scrollTop = body.scrollHeight
+  const doneBtn = document.getElementById('guide-done-todo')
+  if (doneBtn) {
+    doneBtn.addEventListener('click', async () => {
+      doneBtn.disabled = true
+      try {
+        await fetch('/api/todo', {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ id: g.todoId, done: true }),
+        })
+        fetchData()
+        closeGuide()
+      } catch { doneBtn.disabled = false }
+    })
+  }
+}
+
+function guideGo(dir) {
+  const g = guide.data
+  if (!g) return
+  const total = g.steps.length
+  if (dir > 0 && guide.idx >= total) { closeGuide(); return } // CLOSE once finished
+  guide.idx = Math.max(0, Math.min(guide.idx + dir, total))
+  localStorage.setItem(guideKey(guide.slug), String(guide.idx))
+  renderGuide()
+  if (guide.idx >= total) speak(g.outro)
+  else speak(g.steps[guide.idx].voice)
+}
+
+$('#guide-close').addEventListener('click', closeGuide)
+$('#guide-back').addEventListener('click', () => guideGo(-1))
+$('#guide-next').addEventListener('click', () => guideGo(1))
+$('#guide-restart').addEventListener('click', () => {
+  if (!guide.data) return
+  guide.idx = 0
+  localStorage.setItem(guideKey(guide.slug), '0')
+  renderGuide()
+  speak([guide.data.intro, guide.data.steps[0].voice].filter(Boolean).join(' '))
+})
+
+$('#guide-ask').addEventListener('keydown', async e => {
+  if (e.key !== 'Enter' || !e.target.value.trim()) return
+  const g = guide.data
+  if (!g) return
+  const q = e.target.value.trim()
+  e.target.value = ''
+  const i = Math.min(guide.idx, g.steps.length - 1)
+  const s = g.steps[i]
+  const qa = document.getElementById('guide-qa') || $('#guide-body')
+  const row = document.createElement('div')
+  row.className = 'guide-qa-row'
+  row.innerHTML = `<div class="guide-q">${esc(q)}</div><div class="guide-a">Processing<span class="cursor"></span></div>`
+  qa.appendChild(row)
+  const aEl = row.querySelector('.guide-a')
+  const context = `He is mid-walkthrough on the HUD: "${g.title}", step ${i + 1} of ${g.steps.length}, titled "${s.title}". `
+    + `The step instructions: ${s.body}${s.command ? ' The step command: ' + s.command : ''} `
+    + 'Answer his question about THIS step concretely and briefly; no preamble.'
+  const { j, streamedText } = await askApi(context + '\n\nHis question: ' + q, text => {
+    aEl.textContent = text
+    $('#guide-body').scrollTop = $('#guide-body').scrollHeight
+  })
+  const answer = j.ok ? (j.answer || streamedText) : 'Fault in the reasoning core: ' + (j.error || 'unknown')
+  aEl.textContent = answer
+  $('#guide-body').scrollTop = $('#guide-body').scrollHeight
+  if (j.ok) speak(answer)
 })
 
 // ---------- focus mode + pomodoro ----------
