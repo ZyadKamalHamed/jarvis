@@ -489,9 +489,11 @@ function ttsSay(text) {
   })
 }
 
-async function tts(text) {
+async function tts(text, pref) {
   await fsp.mkdir(CACHE, { recursive: true })
-  const engine = process.env.ELEVENLABS_API_KEY ? 'el' : 'say'
+  // The client may ask for 'say' to spare ElevenLabs credits; 'el' without
+  // a key quietly becomes 'say' so the voice never just goes missing.
+  const engine = pref === 'say' || !process.env.ELEVENLABS_API_KEY ? 'say' : 'el'
   const hash = crypto.createHash('sha1').update(engine + '|' + text).digest('hex')
   for (const ext of ['.mp3', '.m4a', '.aiff']) {
     const hit = path.join(CACHE, hash + ext)
@@ -791,7 +793,7 @@ const server = http.createServer(async (req, res) => {
       if (!body.text) return json(res, 400, { error: 'text required' })
       // 2400 chars comfortably covers a 120-second briefing read; anything
       // longer is a mistake that would burn ElevenLabs credit for nothing.
-      const { buf, type } = await tts(String(body.text).slice(0, 2400))
+      const { buf, type } = await tts(String(body.text).slice(0, 2400), body.engine)
       res.writeHead(200, { 'content-type': type, 'content-length': buf.length })
       return res.end(buf)
     }

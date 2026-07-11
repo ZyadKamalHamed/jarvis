@@ -629,11 +629,15 @@ function pulseCoreFrom(el) {
   requestAnimationFrame(loop)
 }
 
-async function speak(text) {
-  if (!text || !soundOn) return
+// Which engine renders speech. 'el' spends ElevenLabs credits per new line,
+// 'say' is free on this Mac; the server falls back to say if the key is absent.
+function voiceEngine() { return localStorage.getItem('jarvis-voice-engine') === 'say' ? 'say' : 'el' }
+
+async function speak(text, force = false) {
+  if (!text || (!soundOn && !force)) return
   stopSpeech()
   try {
-    const res = await fetch('/api/tts', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text }) })
+    const res = await fetch('/api/tts', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text, engine: voiceEngine() }) })
     if (!res.ok) throw new Error('tts ' + res.status)
     const blob = await res.blob()
     stopSpeech() // a second request may have started while this one was rendering
@@ -909,6 +913,8 @@ $('#run-briefing').addEventListener('click', async () => {
 
 // ---------- conversation log ----------
 
+let convoEntries = []
+
 async function toggleConvo() {
   const el = $('#convo')
   if (!el.hidden) { el.hidden = true; return }
@@ -918,9 +924,10 @@ async function toggleConvo() {
   try {
     const j = await (await fetch('/api/conversations' + (WORK_PARAM ? '?work=1' : ''))).json()
     const stamp = at => new Date(at).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false })
-    body.innerHTML = (j.entries || []).map(e => `
+    convoEntries = j.entries || []
+    body.innerHTML = convoEntries.map((e, i) => `
       <div class="convo-row">
-        <div class="convo-q">${esc(e.q)}<span class="convo-at">${stamp(e.at)}</span></div>
+        <div class="convo-q">${esc(e.q)}<span class="convo-meta"><button class="convo-play" data-ci="${i}" title="Hear this reply">&#9654;</button><span class="convo-at">${stamp(e.at)}</span></span></div>
         <div class="convo-a">${esc(e.a)}</div>
       </div>`).join('') || '<p class="empty">No conversations on record yet. Everything we say via the prompt is kept here.</p>'
     body.scrollTop = body.scrollHeight
@@ -930,6 +937,12 @@ async function toggleConvo() {
 }
 
 $('#log-btn').addEventListener('click', toggleConvo)
+$('#convo-body').addEventListener('click', e => {
+  const btn = e.target.closest('.convo-play')
+  if (!btn) return
+  const entry = convoEntries[Number(btn.dataset.ci)]
+  if (entry?.a) speak(entry.a, true) // an explicit play outranks the SND toggle
+})
 $('#convo-close').addEventListener('click', () => { $('#convo').hidden = true })
 addEventListener('keydown', e => {
   if (e.key === 'Escape' && !$('#convo').hidden) $('#convo').hidden = true
@@ -955,6 +968,7 @@ function paletteActions() {
     { name: 'Play or pause music', run: () => $('#player-play').click() },
     { name: 'Next track', run: () => $('#player-next').click() },
     { name: 'Volume mixer', run: () => $('#vol-btn').click() },
+    { name: 'Switch voice engine (ElevenLabs / Mac)', run: () => $('#mix-engine').click() },
     { name: 'Ask JARVIS...', run: () => $('#ask-input').focus() },
     { name: 'Capture a thought (in:)', run: preset('in: ') },
     { name: 'File feedback (fb:)', run: preset('fb: ') },
@@ -1022,11 +1036,13 @@ $('#palette-list').addEventListener('click', e => {
 })
 
 function showHelp() { $('#help').hidden = false }
+$('#help-btn').addEventListener('click', showHelp)
 $('#help-close').addEventListener('click', () => { $('#help').hidden = true })
 
 addEventListener('keydown', e => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); togglePalette() }
   else if (e.key === '?' && !e.target.matches('input, textarea')) { e.preventDefault(); showHelp() }
+  else if (e.key.toLowerCase() === 'm' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.target.matches('input, textarea') && !$('#mic').disabled) { e.preventDefault(); $('#mic').click() }
   else if (e.key === 'Escape') {
     if (!$('#palette').hidden) togglePalette(false)
     if (!$('#help').hidden) $('#help').hidden = true
@@ -1238,7 +1254,13 @@ function renderMixer() {
   $('#mix-voice').value = Math.round(vol.voice * 100)
   $('#mix-music-val').textContent = Math.round(vol.music * 100)
   $('#mix-voice-val').textContent = Math.round(vol.voice * 100)
+  $('#mix-engine').textContent = voiceEngine() === 'say' ? 'MAC SAY (FREE)' : 'ELEVENLABS'
 }
+
+$('#mix-engine').addEventListener('click', () => {
+  localStorage.setItem('jarvis-voice-engine', voiceEngine() === 'say' ? 'el' : 'say')
+  renderMixer()
+})
 
 $('#mix-music').addEventListener('input', e => {
   vol.music = Number(e.target.value) / 100

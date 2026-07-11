@@ -8,7 +8,7 @@ The bar: nothing in the briefing may be homework you could have already done. If
 
 1. **Career (no scanning, AIOS owns that).** Read `~/Coding/AIOS/data/aios-data.json` and `~/Coding/AIOS/tracker/status-updates.json`. Extract today's pick, pipeline stats, DSA streak, and every deadline or interview date within 7 days. Read only.
 2. **Uni.** Refresh `data/uni.json`:
-   - Canvas API when `CANVAS_TOKEN` exists in `.env`: GET `https://canvas.uts.edu.au/api/v1/courses?enrollment_state=active` then per-course `.../assignments?bucket=upcoming&order_by=due_at` and `.../discussion_topics?only_announcements=true`. Map to the schema.
+   - Run `node bin/canvas.mjs --write`. It reads `CANVAS_TOKEN` from `.env` in its own process (agents cannot and must not read `.env` directly), pulls active courses and dated assignments from the UTS Canvas API, and merges them in while preserving editorial fields (nextAction, flags, progressPct). On a non-zero exit, mark the uni pipeline degraded in `system.json` with the script's stderr message and carry the old data forward.
    - Flag: anything due within 72 hours with progress under 60 percent, and any new announcement mentioning assessment, exam or due date changes.
 3. **Study.** Run `python3 bin/study.py refresh` (FSRS over the Obsidian vault). If the vault is missing, mark the pipeline degraded in `system.json` instead of failing.
 4. **Fitness.** Refresh `data/fitness.json` from `~/HealthAutoExport/` exports if present, plus `data/manual/log.jsonl` check-ins. Never fabricate; carry stale data forward with `source` set honestly.
