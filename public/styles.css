@@ -297,6 +297,14 @@ body.speaking .r-core { animation: none; }
 .asg-bar { grid-column: 1 / -1; height: 4px; background: rgba(23,212,254,.1); position: relative; margin-top: 5px; }
 .asg-bar i { position: absolute; inset: 0 auto 0 0; background: var(--cyan); box-shadow: 0 0 6px rgba(23,212,254,.6); }
 .asg-next { grid-column: 1 / -1; color: var(--dim); font-size: 12.5px; font-weight: 500; margin-top: 3px; }
+.asg.tickable { grid-template-columns: auto 1fr auto; }
+.asg.tickable .asg-bar, .asg.tickable .asg-next { grid-column: 2 / -1; }
+.asg-done {
+  display: flex; align-items: center; gap: 10px; padding: 6px 0;
+  border-bottom: 1px solid rgba(23,212,254,.08); color: var(--dim); font-size: 12.5px;
+}
+.asg-done span { text-decoration: line-through; text-decoration-color: rgba(72,229,163,.5); }
+.todo-tick.on { color: var(--green); border-color: rgba(72,229,163,.5); background: rgba(72,229,163,.07); }
 
 /* ---------- Study / fitness / work shared ---------- */
 .bignum { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }

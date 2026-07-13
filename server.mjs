@@ -979,6 +979,27 @@ const server = http.createServer(async (req, res) => {
       notifyClients()
       return json(res, 200, { ok: true })
     }
+    if (url.pathname === '/api/uni-done' && req.method === 'POST') {
+      // Tick an assignment off the University board. done:true remembers the
+      // prior status so an untick restores it (Submitted stays Submitted).
+      const body = await readBody(req)
+      const file = path.join(DATA, 'uni.json')
+      const uni = await readJson(file)
+      const hit = (uni?.assignments || []).find(a => a.id === body.id)
+      if (!hit) return json(res, 404, { error: 'unknown assignment' })
+      if (body.done) {
+        if (hit.status !== 'done') hit.prevStatus = hit.status
+        hit.status = 'done'
+        hit.doneAt = new Date().toISOString()
+      } else {
+        hit.status = hit.prevStatus || 'Not started'
+        delete hit.prevStatus
+        delete hit.doneAt
+      }
+      await writeJsonAtomic(file, uni)
+      notifyClients()
+      return json(res, 200, { ok: true, status: hit.status })
+    }
     if (url.pathname === '/api/dismiss' && req.method === 'POST') {
       const body = await readBody(req)
       const id = String(body.id || '')

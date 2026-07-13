@@ -283,10 +283,14 @@ document.addEventListener('click', async e => {
   if (tick) {
     tick.disabled = true
     const isInbox = !!tick.dataset.inbox
+    const isUni = !!tick.dataset.uni
     try {
-      await fetch(isInbox ? '/api/capture' : '/api/todo', {
+      await fetch(isInbox ? '/api/capture' : isUni ? '/api/uni-done' : '/api/todo', {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ id: isInbox ? tick.dataset.inbox : tick.dataset.todo, done: true }),
+        body: JSON.stringify({
+          id: tick.dataset.inbox || tick.dataset.uni || tick.dataset.todo,
+          done: !tick.dataset.undone, // a ticked row's button restores instead
+        }),
       })
       fetchData()
     } catch { tick.disabled = false }
@@ -522,18 +526,28 @@ function renderUni() {
   if (!u) { box.innerHTML = '<p class="empty">No uni feed.</p>'; return }
   chip.textContent = u.semester || ''
   const subjects = (u.subjects || []).map(s => `<span class="subj">${esc(s.code || s)} ${esc(s.name || '')}</span>`).join('')
-  const open = (u.assignments || []).filter(a => a.status !== 'done')
+  const all = u.assignments || []
+  const open = all.filter(a => a.status !== 'done')
+  const cleared = all.filter(a => a.status === 'done')
   const rows = open.map(a => {
     const d = dueLabel(a.due)
-    return `<div class="asg">
+    return `<div class="asg tickable">
+      <button class="todo-tick" data-uni="${esc(a.id)}" title="Tick it off the board">&#10003;</button>
       <span class="asg-title"><span class="code">${esc(a.subject)}</span>${esc(a.title)}</span>
       <span class="asg-due ${d.cls}">${d.text}</span>
       <div class="asg-bar"><i style="width:${Math.min(100, a.progressPct ?? 0)}%"></i></div>
       ${a.nextAction ? `<span class="asg-next">next: ${esc(a.nextAction)}</span>` : ''}
     </div>`
   }).join('')
+  const clearedRows = cleared.map(a => `
+    <div class="asg-done">
+      <button class="todo-tick on" data-uni="${esc(a.id)}" data-undone="1" title="Put it back on the board">&#10003;</button>
+      <span>${esc(a.title)}</span>
+    </div>`).join('')
   const setup = u.setupNote ? `<div class="setup">${esc(u.setupNote)}</div>` : ''
-  box.innerHTML = `<div class="subj-row">${subjects}</div>` + (rows || '<p class="empty">No open assignments. Semester break, or the feed needs a refresh.</p>') + setup
+  box.innerHTML = `<div class="subj-row">${subjects}</div>`
+    + (rows || '<p class="empty">No open assignments. Semester break, or the feed needs a refresh.</p>')
+    + clearedRows + setup
 }
 
 function renderStudy() {

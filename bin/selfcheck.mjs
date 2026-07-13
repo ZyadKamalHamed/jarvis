@@ -210,6 +210,15 @@ async function main() {
     }
     note('/api/dismiss: unknown id answers 404 in both modes (no probe oracle)')
 
+    // Uni tick endpoint: unknown assignment dies before any write.
+    const uniBad = await fetch(BASE + '/api/uni-done', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ id: 'selfcheck-no-such-assignment', done: true }),
+    })
+    if (uniBad.status !== 404) fail('/api/uni-done unknown id not 404 (got ' + uniBad.status + ')')
+    else note('/api/uni-done rejects unknown assignments')
+
     // /api/guide mirrors the dismiss contract: career guides answer 404 in
     // work mode, identical to a missing guide, so the endpoint cannot confirm
     // one exists. Malformed ids die before touching the filesystem.

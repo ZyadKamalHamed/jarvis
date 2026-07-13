@@ -95,11 +95,15 @@ const merged = pulled.map(p => {
     title: p.title,
     due: p.due || old?.due || null,
     progressPct: p.submitted ? 100 : old?.progressPct ?? null,
-    status: p.submitted ? 'Submitted' : old?.status || 'Not started',
+    // A tick on the HUD ('done') outranks the Canvas submission label, or the
+    // morning pull would resurrect every assignment Zyad has cleared.
+    status: old?.status === 'done' ? 'done' : p.submitted ? 'Submitted' : old?.status || 'Not started',
     source: 'canvas',
     nextAction: old?.nextAction || '',
     flags: old?.flags || [],
     points: p.points,
+    ...(old?.doneAt ? { doneAt: old.doneAt } : {}),
+    ...(old?.prevStatus ? { prevStatus: old.prevStatus } : {}),
   }
 })
 // Anything Canvas no longer lists (past courses, hand-added rows) is kept
