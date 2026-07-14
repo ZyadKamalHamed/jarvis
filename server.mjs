@@ -514,7 +514,9 @@ function askClaude(question, mode, onDelta) {
     delete env.ANTHROPIC_API_KEY
     delete env.ANTHROPIC_AUTH_TOKEN
     const result = await new Promise(resolve => {
-      const child = spawn('claude', args, { cwd: ROOT, env, timeout: 300000 })
+      // stdin closed at spawn: claude -p otherwise waits 3s for piped input
+      // and logs "no stdin data received" noise that masks real errors.
+      const child = spawn('claude', args, { cwd: ROOT, env, timeout: 300000, stdio: ['ignore', 'pipe', 'pipe'] })
       let out = ''
       let err = ''
       let lineBuf = ''
@@ -533,7 +535,11 @@ function askClaude(question, mode, onDelta) {
               const delta = ev.event?.delta
               if (delta?.type === 'text_delta' && delta.text) onDelta(delta.text)
             } else if (ev.type === 'result') {
-              finalRes = { ok: !ev.is_error, answer: String(ev.result || '').trim(), sessionId: ev.session_id }
+              // A failed result must carry a real error string; "undefined"
+              // in the feedback log is undiagnosable.
+              finalRes = ev.is_error
+                ? { ok: false, error: String(ev.result || '').trim().slice(0, 400) || 'claude reported an error with no detail' }
+                : { ok: true, answer: String(ev.result || '').trim(), sessionId: ev.session_id }
             }
           } catch { /* non-JSON noise on stdout; ignore */ }
         }
@@ -548,7 +554,8 @@ function askClaude(question, mode, onDelta) {
         if (code !== 0) return resolve({ ok: false, error: (err || out).trim().slice(0, 400) || 'claude exited ' + code })
         try {
           const j = JSON.parse(out)
-          resolve({ ok: !j.is_error, answer: String(j.result || '').trim(), sessionId: j.session_id })
+          if (j.is_error) return resolve({ ok: false, error: String(j.result || '').trim().slice(0, 400) || 'claude reported an error with no detail' })
+          resolve({ ok: true, answer: String(j.result || '').trim(), sessionId: j.session_id })
         } catch {
           resolve({ ok: true, answer: out.trim() })
         }
