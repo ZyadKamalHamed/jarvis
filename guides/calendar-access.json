@@ -8,19 +8,20 @@
   "steps": [
     {
       "title": "Why this is needed",
-      "body": "The morning run reads Calendar.app through a small helper. macOS only shows the permission prompt to a real app like Terminal; my build sandbox could not present it, so calendar status is stuck on denied.",
-      "voice": "Step one, context. macOS wants you, not me, to click the permission prompt."
+      "body": "The morning run reads Calendar.app through a tiny helper app, bin/CalendarHelper.app. It exists because this macOS version refuses to show the permission prompt for plain Terminal scripts (Terminal declares no calendar usage description, so the request dies silently). The helper declares its purpose properly, so macOS lets it ask.",
+      "voice": "Step one, context. macOS only shows a calendar prompt to a real app that explains itself, so I built one."
     },
     {
-      "title": "Run the helper in Terminal",
-      "body": "Open Terminal (the real Terminal app) and run the command below. A macOS prompt should appear: Terminal would like to access your calendar. Click Allow, and choose Full Access if offered.",
+      "title": "Run it in Terminal",
+      "body": "Open Terminal and run the command below. The first run builds the helper if needed, then macOS should ask: CalendarHelper would like full access to your calendar. Click Allow Full Access.",
       "command": "cd ~/Coding/JARVIS && node bin/calendar.mjs",
-      "voice": "Step two. Run the calendar helper in Terminal and click Allow when macOS asks."
+      "voice": "Step two. Run the calendar command in Terminal, and allow full access when CalendarHelper asks."
     },
     {
       "title": "If no prompt appeared",
-      "body": "System Settings, Privacy and Security, Calendars: set Terminal to Full Access, then run the command from step two again.",
-      "voice": "Step three, only if the prompt never showed. Grant Terminal calendar access in System Settings and run it again."
+      "body": "A stale denial can be stuck from earlier attempts. Run the reset below, then the step two command again. Still nothing? System Settings, Privacy and Security, Calendars: set CalendarHelper to Full Access, then run step two once more.",
+      "command": "tccutil reset Calendars com.zyad.jarvis.calendarhelper",
+      "voice": "Step three, only if the prompt never showed. Reset the permission state and run it again."
     },
     {
       "title": "Verify",

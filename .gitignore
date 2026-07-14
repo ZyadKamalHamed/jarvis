@@ -6,6 +6,9 @@ public/assets/music/
 node_modules/
 .DS_Store
 .venv-jarvis/
+# Build product of bin/build-calendar-helper.sh; each machine builds its own
+# so the TCC grant is asked for (and stored) locally.
+bin/CalendarHelper.app/
 
 # Runtime state, regenerated daily by the agents. Never in git history:
 # emails.json and the AIOS mirror carry personal and career data, and this

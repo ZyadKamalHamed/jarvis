@@ -1,61 +1,55 @@
 #!/usr/bin/env node
 // Writes today's and tomorrow's calendar events to data/calendar.json using
-// EventKit through osascript JXA. No Calendar.app launch, no dependencies.
-// First ever run triggers one macOS permission prompt; a denial is recorded
+// EventKit through bin/CalendarHelper.app (JXA applet, auto-built from
+// bin/calendar-helper.jxa on first run). No Calendar.app launch, no deps.
+//
+// Why the applet: on macOS 26 an EventKit request from osascript is
+// attributed to Terminal, which declares no calendar usage description, so
+// TCC auto-denies WITHOUT showing a prompt. The applet carries its own
+// NSCalendarsFullAccessUsageDescription, so the first run prompts properly
+// ("CalendarHelper would like full access..."). A denial is still recorded
 // honestly as a setup state, never fabricated around.
-import { execFile } from 'node:child_process'
+import { execFile, execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
 const OUT = path.join(ROOT, 'data', 'calendar.json')
+const APP = path.join(ROOT, 'bin', 'CalendarHelper.app')
+const APPLET = path.join(APP, 'Contents', 'MacOS', 'applet')
 
-const JXA = `
-ObjC.import('EventKit')
-function run() {
-  const store = $.EKEventStore.alloc.init
-  const status = $.EKEventStore.authorizationStatusForEntityType($.EKEntityTypeEvent)
-  if (status === 0) {
-    let done = false
-    let granted = false
-    const cb = function (g, err) { granted = g; done = true }
-    try {
-      store.requestFullAccessToEventsWithCompletion(cb)
-    } catch (e) {
-      try { store.requestAccessToEntityTypeCompletion($.EKEntityTypeEvent, cb) } catch (e2) { return JSON.stringify({ error: 'request-failed' }) }
-    }
-    const deadline = Date.now() + 20000
-    while (!done && Date.now() < deadline) {
-      $.NSRunLoop.currentRunLoop.runUntilDate($.NSDate.dateWithTimeIntervalSinceNow(0.2))
-    }
-    if (!granted) return JSON.stringify({ error: 'denied' })
-  } else if (status !== 3) {
-    return JSON.stringify({ error: 'denied' })
-  }
-  const calNow = $.NSCalendar.currentCalendar
-  const startOfDay = calNow.startOfDayForDate($.NSDate.date)
-  const end = startOfDay.dateByAddingTimeInterval(2 * 86400)
-  const pred = store.predicateForEventsWithStartDateEndDateCalendars(startOfDay, end, $())
-  const events = store.eventsMatchingPredicate(pred)
-  const fmt = $.NSISO8601DateFormatter.alloc.init
-  const out = []
-  for (let i = 0; i < events.count; i++) {
-    const ev = events.objectAtIndex(i)
-    out.push({
-      title: ObjC.unwrap(ev.title) || '',
-      start: ObjC.unwrap(fmt.stringFromDate(ev.startDate)),
-      end: ObjC.unwrap(fmt.stringFromDate(ev.endDate)),
-      allDay: !!ev.allDay,
-      calendar: ObjC.unwrap(ev.calendar.title) || '',
-      location: ObjC.unwrap(ev.location) || '',
-    })
-  }
-  return JSON.stringify({ events: out })
+const SETUP_NOTE = 'Calendar access not granted yet. Run: node bin/calendar.mjs in Terminal once and click '
+  + '"Allow Full Access" on the CalendarHelper prompt. No prompt? System Settings > Privacy & Security > '
+  + 'Calendars > CalendarHelper > Full Access, then run it again.'
+
+function writeDoc(doc) {
+  fs.mkdirSync(path.dirname(OUT), { recursive: true })
+  const tmp = OUT + '.tmp-' + process.pid
+  fs.writeFileSync(tmp, JSON.stringify(doc, null, 2) + '\n')
+  fs.renameSync(tmp, OUT)
+  console.log('calendar:', doc.status + ',', doc.events.length, 'events')
 }
-`
 
-execFile('osascript', ['-l', 'JavaScript', '-e', JXA], { timeout: 30000 }, (err, stdout, stderr) => {
+// Build the helper bundle if it is missing (gitignored build product; the
+// home laptop builds its own on first run and gets its own TCC prompt there).
+if (!fs.existsSync(APPLET) || process.argv.includes('--rebuild')) {
+  try {
+    execFileSync('bash', [path.join(ROOT, 'bin', 'build-calendar-helper.sh')], { stdio: 'inherit', timeout: 60000 })
+  } catch (e) {
+    writeDoc({
+      updatedAt: new Date().toISOString(),
+      source: 'eventkit',
+      status: 'error',
+      events: [],
+      setupNote: 'CalendarHelper.app failed to build (osacompile). Run: bash bin/build-calendar-helper.sh to see why.',
+      detail: String(e?.message || '').slice(0, 300),
+    })
+    process.exit(1)
+  }
+}
+
+execFile(APPLET, [], { timeout: 75000 }, (err, stdout, stderr) => {
   let result = null
   try { result = JSON.parse(String(stdout).trim()) } catch { /* fall through to error doc */ }
   const now = new Date().toISOString()
@@ -66,15 +60,11 @@ execFile('osascript', ['-l', 'JavaScript', '-e', JXA], { timeout: 30000 }, (err,
       source: 'eventkit',
       status: result?.error === 'denied' ? 'denied' : 'error',
       events: [],
-      setupNote: 'Calendar access not granted yet. Run: node bin/calendar.mjs in Terminal once and click Allow on the popup. It retries itself every half hour after that.',
+      setupNote: SETUP_NOTE,
       detail: String(stderr || err?.message || result?.error || '').slice(0, 300),
     }
   } else {
     doc = { updatedAt: now, source: 'eventkit', status: 'ok', events: (result.events || []).slice(0, 40) }
   }
-  fs.mkdirSync(path.dirname(OUT), { recursive: true })
-  const tmp = OUT + '.tmp-' + process.pid
-  fs.writeFileSync(tmp, JSON.stringify(doc, null, 2) + '\n')
-  fs.renameSync(tmp, OUT)
-  console.log('calendar:', doc.status + ',', doc.events.length, 'events')
+  writeDoc(doc)
 })
