@@ -11,6 +11,7 @@ import os from 'node:os'
 import crypto from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import { BANNED } from './bin/banned-terms.mjs'
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url))
 const DATA = path.join(ROOT, 'data')
@@ -422,7 +423,17 @@ async function readConversations(mode, limit = 40) {
   if (!log) return []
   // Work mode may only ever see exchanges that happened in work mode; a
   // full-mode exchange can carry career content in either direction.
-  const entries = mode === 'work' ? log.entries.filter(e => e.mode === 'work') : log.entries
+  // LESSON 14 Jul: the mode tag alone is not enough. Zyad can type career
+  // words into a work-mode ask (the agent declines, but the question is
+  // recorded verbatim), and the log would replay his own words at the
+  // office. So work mode additionally drops any entry that scans dirty.
+  const leaks = e => {
+    const blob = JSON.stringify(e).toLowerCase()
+    return BANNED.some(t => blob.includes(t))
+  }
+  const entries = mode === 'work'
+    ? log.entries.filter(e => e.mode === 'work' && !leaks(e))
+    : log.entries
   return entries.slice(-limit)
 }
 

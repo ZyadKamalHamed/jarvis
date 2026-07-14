@@ -20,15 +20,10 @@ const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
 const PORT = 4779
 const BASE = `http://127.0.0.1:${PORT}`
 
-// Words that must never appear in a work-mode payload, case-insensitive.
-// Deliberately strict: a false positive costs a minute, a leak costs a job.
-const BANNED = [
-  'career', 'jobhunt', 'job hunt', 'job application', 'application', 'interview',
-  'recruiter', 'leetcode', 'codesignal', 'dsa', 'aios', 'resume', 'cover letter',
-  'salary review', 'garvan', 'seek.com', 'jobs surfaced', 'apps sent',
-  'hirevue', 'greenhouse', 'magtanong', 'sonder', 'deloitte', 'commbank',
-  'amberjack', 'gradconnection', 'avature', 'assessments.amazon',
-]
+// The banned-terms list lives in bin/banned-terms.mjs (single source of
+// truth, shared with the server's own serving-time filters). It may be
+// extended there, never trimmed.
+import { BANNED } from './banned-terms.mjs'
 
 const failures = []
 const note = m => console.log('  ' + m)
