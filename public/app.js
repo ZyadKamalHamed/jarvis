@@ -1564,7 +1564,7 @@ $('#guide-ask').addEventListener('keydown', async e => {
 // reschedules. The card list is cut at stats.sessionMin so the session stays
 // inside the 5 to 20 minute budget; whatever misses the cut stays due.
 
-const recall = { cards: [], idx: 0, revealed: false, done: 0 }
+const recall = { cards: [], idx: 0, revealed: false, done: 0, ex: null, flashIdx: 0 }
 
 function startRecall() {
   const st = DATA.study
@@ -1591,22 +1591,225 @@ function closeRecall() {
   fetchData()
 }
 
-function openRecallCard() {
+// Each card asks the server which exercise tier its memory has earned
+// (recognition early, production late; the ladder lives in
+// /api/study-exercise). Cards with no exercise file keep the classic
+// reveal-and-grade flow.
+async function openRecallCard() {
   const q = recall.cards[recall.idx]
   recall.revealed = false
+  recall.ex = null
+  recall.flashIdx = 0
   $('#recall-progress').innerHTML = `<span class="chip">CARD ${recall.idx + 1} / ${recall.cards.length}</span>`
     + `<span class="chip">${esc((q.module || 'vault').toUpperCase())}</span>`
     + (q.estMin ? `<span class="chip">~${q.estMin}M</span>` : '')
+  $('#recall-body').innerHTML = `<div class="recall-title">${esc(q.title)}</div><div class="recall-hint">Loading...</div>`
+  $('#recall-controls').innerHTML = ''
+  let ex = null
+  try {
+    const res = await fetch('/api/study-exercise?id=' + encodeURIComponent(q.id || q.noteId) + (WORK_PARAM ? '&work=1' : ''))
+    if (res.ok) ex = await res.json()
+  } catch { /* classic flow below */ }
+  recall.ex = ex
+  if (ex?.tier === 'mc') renderMc(q, ex)
+  else if (ex?.tier === 'flash') renderFlash(q)
+  else if (ex?.tier === 'code') renderCode(q, ex)
+  else renderClassic(q)
+}
+
+function tierChip(label) {
+  $('#recall-progress').insertAdjacentHTML('beforeend', `<span class="chip">${label}</span>`)
+}
+
+function skipButtonHtml() {
+  return '<button class="act-btn" id="recall-skip" title="Leave it due, no grade">SKIP</button>'
+}
+
+function wireSkip() {
+  document.getElementById('recall-skip')?.addEventListener('click', nextRecall)
+}
+
+// The 1..4 grade bar. A suggested grade (from a checked answer) pulses but
+// he always has final say; suggested 0 means no opinion.
+function showGradeBar(suggested, extraHtml) {
+  recall.revealed = true
+  $('#recall-controls').innerHTML = (extraHtml || '')
+    + `<button class="act-btn${suggested === 1 ? ' suggest' : ''}" data-grade="1">AGAIN (1)</button>
+    <button class="act-btn" data-grade="2">HARD (2)</button>
+    <button class="act-btn yes${suggested === 3 ? ' suggest' : ''}" data-grade="3">GOOD (3)</button>
+    <button class="act-btn" data-grade="4">EASY (4)</button>`
+  for (const b of $('#recall-controls').querySelectorAll('[data-grade]')) {
+    b.addEventListener('click', () => gradeRecall(Number(b.dataset.grade)))
+  }
+}
+
+function renderClassic(q) {
   $('#recall-body').innerHTML = `
     <div class="recall-title">${esc(q.title)}</div>
     <div class="recall-prompt">${esc(q.prompt || 'From memory: what are the key points? Say them out loud before you check.')}</div>
     <div class="recall-hint">Answer out loud or on paper, then reveal to check yourself.</div>`
   $('#recall-controls').innerHTML = `
-    <button class="act-btn yes" id="recall-reveal">REVEAL (SPACE)</button>
-    <button class="act-btn" id="recall-skip" title="Leave it due, no grade">SKIP</button>`
+    <button class="act-btn yes" id="recall-reveal">REVEAL (SPACE)</button>` + skipButtonHtml()
   document.getElementById('recall-reveal').addEventListener('click', revealRecall)
-  document.getElementById('recall-skip').addEventListener('click', nextRecall)
+  wireSkip()
   speak(q.prompt || q.title)
+}
+
+// ----- multiple choice tier -----
+
+function renderMc(q, ex) {
+  const e = ex.exercise
+  tierChip('MULTIPLE CHOICE')
+  $('#recall-body').innerHTML = `
+    <div class="recall-title">${esc(q.title)}</div>
+    <div class="recall-prompt">${esc(e.q)}</div>
+    <div class="recall-opts">${e.options.map((o, i) =>
+      `<button class="recall-opt" data-opt="${i}"><span class="recall-optkey">${'ABCD'[i]}</span>${esc(o)}</button>`).join('')}</div>`
+  $('#recall-controls').innerHTML = skipButtonHtml()
+  wireSkip()
+  for (const b of $('#recall-body').querySelectorAll('.recall-opt')) {
+    b.addEventListener('click', () => answerMc(Number(b.dataset.opt)))
+  }
+  speak(e.q)
+}
+
+function answerMc(i) {
+  if (recall.revealed) return
+  const e = recall.ex.exercise
+  const right = i === e.answer
+  for (const b of $('#recall-body').querySelectorAll('.recall-opt')) {
+    const n = Number(b.dataset.opt)
+    b.disabled = true
+    if (n === e.answer) b.classList.add('ok')
+    else if (n === i) b.classList.add('bad')
+  }
+  $('#recall-body').insertAdjacentHTML('beforeend',
+    `<div class="recall-verdict ${right ? 'pass' : 'fail'}">${right ? 'Correct.' : 'Not quite.'} ${esc(e.why || '')}</div>`)
+  showGradeBar(right ? 3 : 1)
+}
+
+// ----- flashcard tier -----
+
+function renderFlash(q) {
+  tierChip('FLASHCARDS')
+  showFlashPair(q)
+}
+
+function showFlashPair(q) {
+  const pairs = recall.ex.exercise.pairs
+  const p = pairs[recall.flashIdx]
+  $('#recall-body').innerHTML = `
+    <div class="recall-title">${esc(q.title)}</div>
+    <div class="recall-hint">Flashcard ${recall.flashIdx + 1} of ${pairs.length}</div>
+    <div class="recall-flash-front">${esc(p.front)}</div>
+    <div id="recall-flash-back"></div>`
+  $('#recall-controls').innerHTML = `
+    <button class="act-btn yes" id="recall-reveal">REVEAL (SPACE)</button>` + skipButtonHtml()
+  document.getElementById('recall-reveal').addEventListener('click', () => showFlashBack(q))
+  wireSkip()
+  speak(p.front)
+}
+
+function showFlashBack(q) {
+  const pairs = recall.ex.exercise.pairs
+  const p = pairs[recall.flashIdx]
+  document.getElementById('recall-flash-back').innerHTML = `<div class="recall-flash-backtext">${esc(p.back)}</div>`
+  if (recall.flashIdx + 1 < pairs.length) {
+    $('#recall-controls').innerHTML = `
+      <button class="act-btn yes" id="recall-reveal">NEXT CARD (SPACE)</button>` + skipButtonHtml()
+    document.getElementById('recall-reveal').addEventListener('click', () => {
+      recall.flashIdx += 1
+      showFlashPair(q)
+    })
+    wireSkip()
+  } else {
+    showGradeBar(0)
+  }
+}
+
+// ----- code tier -----
+
+function renderCode(q, ex) {
+  const e = ex.exercise
+  tierChip('WRITE THE CODE')
+  $('#recall-body').innerHTML = `
+    <div class="recall-title">${esc(q.title)}</div>
+    <div class="recall-prompt">${esc(e.task)}</div>
+    <textarea id="recall-editor" class="recall-editor" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea>
+    <div id="recall-checkout"></div>`
+  const ed = document.getElementById('recall-editor')
+  ed.value = e.starter || ''
+  wireEditor(ed)
+  $('#recall-controls').innerHTML = `
+    <button class="act-btn yes" id="recall-check">CHECK MY WORK</button>` + skipButtonHtml()
+  document.getElementById('recall-check').addEventListener('click', () => checkCode(document.getElementById('recall-check')))
+  wireSkip()
+  speak(e.task)
+  ed.focus()
+  ed.selectionStart = ed.selectionEnd = ed.value.length
+}
+
+// Python-flavoured typing: Tab indents 4, Shift+Tab dedents, Enter keeps the
+// line's indent and adds a level after a trailing colon. No execution; the
+// checking happens server-side.
+function wireEditor(ed) {
+  ed.addEventListener('keydown', ev => {
+    if (ev.key === 'Tab') {
+      ev.preventDefault()
+      const s = ed.selectionStart
+      const lineStart = ed.value.lastIndexOf('\n', s - 1) + 1
+      if (ev.shiftKey) {
+        const m = ed.value.slice(lineStart).match(/^ {1,4}/)
+        if (m) {
+          ed.value = ed.value.slice(0, lineStart) + ed.value.slice(lineStart + m[0].length)
+          ed.selectionStart = ed.selectionEnd = Math.max(lineStart, s - m[0].length)
+        }
+      } else {
+        ed.value = ed.value.slice(0, s) + '    ' + ed.value.slice(ed.selectionEnd)
+        ed.selectionStart = ed.selectionEnd = s + 4
+      }
+    } else if (ev.key === 'Enter') {
+      ev.preventDefault()
+      const s = ed.selectionStart
+      const lineStart = ed.value.lastIndexOf('\n', s - 1) + 1
+      const line = ed.value.slice(lineStart, s)
+      const indent = (line.match(/^ */) || [''])[0]
+      const ins = '\n' + indent + (/:\s*$/.test(line) ? '    ' : '')
+      ed.value = ed.value.slice(0, s) + ins + ed.value.slice(ed.selectionEnd)
+      ed.selectionStart = ed.selectionEnd = s + ins.length
+    }
+  })
+}
+
+async function checkCode(btn) {
+  const q = recall.cards[recall.idx]
+  const ed = document.getElementById('recall-editor')
+  if (!ed || !ed.value.trim() || (btn && btn.disabled)) return
+  const label = btn?.textContent
+  if (btn) { btn.disabled = true; btn.textContent = 'CHECKING...' }
+  let v = null
+  try {
+    const res = await fetch('/api/study-check' + (WORK_PARAM ? '?work=1' : ''), {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ id: q.id || q.noteId, code: ed.value }),
+    })
+    if (res.ok) v = await res.json()
+  } catch { /* handled below */ }
+  if (btn) { btn.disabled = false; btn.textContent = label }
+  const out = document.getElementById('recall-checkout')
+  if (!out) return
+  if (!v) {
+    out.innerHTML = '<div class="recall-verdict fail">The checker did not respond. Try again, or grade on feel.</div>'
+    return
+  }
+  const hints = (v.checks || []).filter(k => !k.ok && k.hint)
+    .map(k => `<div class="recall-hint">&#8226; ${esc(k.hint)}</div>`).join('')
+  out.innerHTML = `<div class="recall-verdict ${v.pass ? 'pass' : 'fail'}">`
+    + `${v.pass ? 'PASS' : 'NOT YET'}${v.graded ? '' : ' (offline check only)'} : ${esc(v.feedback || '')}</div>` + hints
+  showGradeBar(v.suggested || (v.pass ? 3 : 1),
+    '<button class="act-btn" id="recall-recheck">RE-CHECK</button>')
+  document.getElementById('recall-recheck')?.addEventListener('click', () =>
+    checkCode(document.getElementById('recall-recheck')))
 }
 
 async function revealRecall() {
@@ -1627,14 +1830,7 @@ async function revealRecall() {
       ? `<div class="recall-hint">The note lives in the vault; open it and read it through.</div>` + obsidian
       : '<div class="recall-hint">No stored content for this card; grade on how the recall felt.</div>'
   $('#recall-body').insertAdjacentHTML('beforeend', check)
-  $('#recall-controls').innerHTML = `
-    <button class="act-btn" data-grade="1">AGAIN (1)</button>
-    <button class="act-btn" data-grade="2">HARD (2)</button>
-    <button class="act-btn yes" data-grade="3">GOOD (3)</button>
-    <button class="act-btn" data-grade="4">EASY (4)</button>`
-  for (const b of $('#recall-controls').querySelectorAll('[data-grade]')) {
-    b.addEventListener('click', () => gradeRecall(Number(b.dataset.grade)))
-  }
+  showGradeBar(0)
 }
 
 async function gradeRecall(rating) {

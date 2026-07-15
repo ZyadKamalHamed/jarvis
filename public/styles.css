@@ -660,6 +660,42 @@ body[data-focus="1"] #panel-focus, body[data-focus="1"] #panel-day { display: bl
 .recall-h { margin-top: 10px; font-family: var(--font-mono); font-size: 11px; letter-spacing: .14em; color: var(--cyan); text-transform: uppercase; }
 .recall-gap { height: 7px; }
 
+/* exercise tiers: multiple choice, flashcards, code editor */
+.recall-opts { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; }
+.recall-opt {
+  display: flex; align-items: baseline; gap: 10px; text-align: left;
+  background: rgba(23,212,254,.04); border: 1px solid var(--faint); color: #cdeefb;
+  font-size: 14px; line-height: 1.45; padding: 9px 12px; border-radius: 4px; cursor: pointer;
+}
+.recall-opt:hover:not(:disabled) { border-color: var(--cyan); }
+.recall-opt:disabled { cursor: default; opacity: .75; }
+.recall-opt.ok { border-color: var(--green); background: rgba(72,229,163,.08); opacity: 1; }
+.recall-opt.bad { border-color: var(--red); background: rgba(255,93,93,.07); opacity: 1; }
+.recall-optkey { font-family: var(--font-mono); font-size: 10.5px; color: var(--dim); }
+.recall-verdict {
+  margin-top: 12px; padding: 9px 11px; border-radius: 4px;
+  font-size: 13px; line-height: 1.5;
+}
+.recall-verdict.pass { border: 1px solid var(--green); background: rgba(72,229,163,.07); color: #d7f5e4; }
+.recall-verdict.fail { border: 1px solid var(--red); background: rgba(255,93,93,.06); color: #ffe0e0; }
+.recall-flash-front { margin-top: 16px; color: #cdeefb; font-size: 18px; line-height: 1.5; }
+.recall-flash-backtext {
+  margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--faint);
+  color: var(--cyan-soft); font-size: 15px; line-height: 1.55;
+}
+.recall-editor {
+  margin-top: 12px; width: 100%; min-height: 190px; resize: vertical;
+  font-family: var(--font-mono); font-size: 13px; line-height: 1.5; tab-size: 4;
+  color: #d9f6ff; background: rgba(4,12,18,.85);
+  border: 1px solid var(--faint); border-radius: 4px; padding: 10px 12px;
+}
+.recall-editor:focus { outline: none; border-color: var(--cyan); }
+.act-btn.suggest { animation: suggestPulse 1.6s ease-in-out infinite; }
+@keyframes suggestPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(23,212,254,0); }
+  50% { box-shadow: 0 0 9px 1px rgba(23,212,254,.45); }
+}
+
 /* ---------- Agent deck (holograms) ---------- */
 .deck {
   display: flex; align-items: flex-end; justify-content: center; gap: 6px;

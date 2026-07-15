@@ -131,21 +131,37 @@ function stripCareer(payload) {
     })
   }
   if (out.briefing) {
-    const sections = (out.briefing.sections || []).filter(s => s.module !== 'career')
+    // Module filter first, then a scansClean gate on every surviving
+    // section. LESSON 16 Jul: the morning agent writes section bodies with
+    // career context in scope and named application targets inside the
+    // email section, which is module 'email' and sailed past the module
+    // filter. A dirty section vanishes whole; absence is honest, a scrub
+    // would advertise that something was hidden.
+    const sections = (out.briefing.sections || [])
+      .filter(s => s.module !== 'career' && scansClean(JSON.stringify(s)))
+    const wh = out.briefing.workHeadline
+    const wv = out.briefing.workVoiceScript
     out.briefing = {
       ...out.briefing,
       sections,
-      headline: out.briefing.workHeadline || sections[0]?.title || 'Systems nominal.',
-      voiceScript: out.briefing.workVoiceScript || sections.map(s => s.body).join(' '),
+      headline: (wh && scansClean(wh) ? wh : null) || sections[0]?.title || 'Systems nominal.',
+      voiceScript: (wv && scansClean(wv) ? wv : null) || sections.map(s => s.body).join(' '),
       audioFile: null,
     }
     delete out.briefing.workVoiceScript
     delete out.briefing.workHeadline
   }
   if (out.emails) {
+    // The jobhunt account flag is data discipline, not enforcement, and the
+    // 16 Jul sync wrote accounts unflagged: application threads walked
+    // straight into the work payload. Serving-time gate: flagged accounts
+    // vanish, survivors keep only threads that scan clean, and an account
+    // whose own label or address scans dirty vanishes with them.
     out.emails = {
       ...out.emails,
-      accounts: (out.emails.accounts || []).filter(a => !a.jobhunt),
+      accounts: (out.emails.accounts || [])
+        .filter(a => !a.jobhunt && scansClean(a.label) && scansClean(a.address))
+        .map(a => ({ ...a, topThreads: (a.topThreads || []).filter(t => scansClean(JSON.stringify(t))) })),
     }
   }
   if (out.system) {
@@ -537,6 +553,47 @@ function trimmedSnapshot(payload) {
 
 let askChain = Promise.resolve()
 let reviewChain = Promise.resolve()
+let checkChain = Promise.resolve()
+
+// One-shot claude grader for /api/study-check. Same subscription-only spawn
+// discipline as askClaude but stateless: no session, no tools, strict JSON
+// out. Resolves null on any failure so the caller can fall back to the
+// static checks; a broken grader must never block a recall session.
+// Exercise file for a card id. Vault ids can carry subfolder slashes and
+// spaces; both are flattened to underscores (bin/study-exgen.mjs writes
+// with the identical transform, keep them in lockstep).
+function exerciseFile(id) {
+  return path.join(DATA, 'study-exercises', id.replace(/[\/ ]/g, '_') + '.json')
+}
+
+function gradeWithClaude(prompt) {
+  return new Promise(resolve => {
+    checkChain = checkChain.then(() => new Promise(done => {
+      const finish = v => { resolve(v); done() }
+      const args = ['-p', prompt, '--output-format', 'json',
+        '--disallowedTools', 'Read', 'Glob', 'Grep', 'Bash', 'Write', 'Edit', 'WebFetch', 'WebSearch', 'Task', 'TodoWrite']
+      const env = { ...process.env }
+      delete env.ANTHROPIC_API_KEY
+      delete env.ANTHROPIC_AUTH_TOKEN
+      let out = ''
+      let child
+      try {
+        child = spawn('claude', args, { cwd: ROOT, env, timeout: 90000, stdio: ['ignore', 'pipe', 'ignore'] })
+      } catch { return finish(null) }
+      child.stdout.on('data', d => { out += d })
+      child.on('error', () => finish(null))
+      child.on('close', () => {
+        try {
+          const result = String(JSON.parse(out).result || '')
+          const m = result.match(/\{[\s\S]*\}/)
+          const v = JSON.parse(m ? m[0] : result)
+          if (typeof v.pass !== 'boolean') return finish(null)
+          finish({ pass: v.pass, feedback: String(v.feedback || '').slice(0, 800) })
+        } catch { finish(null) }
+      })
+    }))
+  })
+}
 
 // onDelta, when given, switches claude to stream-json and receives text
 // fragments as they are generated; the returned promise still resolves to
@@ -1208,6 +1265,99 @@ const server = http.createServer(async (req, res) => {
       if (!graded) return json(res, 500, { error: 'grading failed' })
       notifyClients()
       return json(res, 200, { ok: true })
+    }
+    if (url.pathname === '/api/study-exercise' && req.method === 'GET') {
+      // The interactive layer over a recall card. The tier follows the
+      // evidence (recognition early, production late): FSRS reps 0-1 serve
+      // multiple choice, 2-3 flashcards, 4+ the code task, falling back to
+      // whatever the card's exercise file actually has. Career ids answer
+      // 404 in work mode, identical to unknown ids and to cards that simply
+      // have no exercise file, so the endpoint stays a non-oracle.
+      const id = String(url.searchParams.get('id') || '')
+      if (!id || id.length > 200 || id.includes('..') || id.startsWith('/')) {
+        return json(res, 400, { error: 'bad card id' })
+      }
+      const state = await readJson(path.join(DATA, 'fsrs-state.json'))
+      const c = state?.cards?.[id]
+      if (!c || (c.career && (await currentMode(url)) === 'work')) {
+        return json(res, 404, { error: 'unknown card' })
+      }
+      const ex = await readJson(exerciseFile(id), null)
+      const has = t => t === 'code'
+        ? Boolean(ex?.code?.task)
+        : Array.isArray(ex?.[t]) && ex[t].length > 0
+      const reps = Number(c.reps || 0)
+      const prefer = reps <= 1 ? 'mc' : reps <= 3 ? 'flash' : 'code'
+      const ladder = { mc: ['mc', 'flash', 'code'], flash: ['flash', 'mc', 'code'], code: ['code', 'flash', 'mc'] }
+      const tier = ladder[prefer].find(has)
+      if (!tier) return json(res, 404, { error: 'unknown card' })
+      let exercise
+      if (tier === 'mc') {
+        const q = ex.mc[Math.floor(Math.random() * ex.mc.length)]
+        exercise = { q: q.q, options: q.options, answer: q.answer, why: q.why || '' }
+      } else if (tier === 'flash') {
+        exercise = { pairs: ex.flash.map(p => ({ front: p.front, back: p.back })) }
+      } else {
+        // solution and checks stay server-side; checking is /api/study-check
+        exercise = { task: ex.code.task, starter: ex.code.starter || '' }
+      }
+      return json(res, 200, { id, tier, reps, exercise })
+    }
+    if (url.pathname === '/api/study-check' && req.method === 'POST') {
+      // Approval process for the code tier: static checks first (contains,
+      // regex, absent, each with a hint), then a one-shot claude grader for
+      // real feedback. The career guard runs BEFORE any file read or spawn.
+      // JARVIS_NO_LLM_CHECK=1 (selfcheck) keeps the gate deterministic.
+      const body = await readBody(req)
+      const id = String(body.id || '')
+      const code = String(body.code || '')
+      if (!id || id.length > 200 || id.includes('..') || id.startsWith('/')) {
+        return json(res, 400, { error: 'bad card id' })
+      }
+      if (!code.trim() || code.length > 20000) {
+        return json(res, 400, { error: 'code must be 1 to 20000 chars' })
+      }
+      const state = await readJson(path.join(DATA, 'fsrs-state.json'))
+      const c = state?.cards?.[id]
+      if (!c || (c.career && (await currentMode(url)) === 'work')) {
+        return json(res, 404, { error: 'unknown card' })
+      }
+      const ex = await readJson(exerciseFile(id), null)
+      if (!ex?.code?.task) return json(res, 404, { error: 'unknown card' })
+      const checks = []
+      for (const chk of ex.code.checks || []) {
+        let ok = true
+        try {
+          if (chk.type === 'contains') ok = code.includes(chk.value)
+          else if (chk.type === 'absent') ok = !code.includes(chk.value)
+          else if (chk.type === 'regex') ok = new RegExp(chk.value, 'm').test(code)
+        } catch { ok = true } // a malformed pattern must not fail his work
+        checks.push({ ok, hint: ok ? null : (chk.hint || 'expected: ' + chk.value) })
+      }
+      const staticPass = checks.every(k => k.ok)
+      let verdict = null
+      if (!process.env.JARVIS_NO_LLM_CHECK) {
+        let content = ''
+        if (c.contentFile && /^[\w.-]+\.md$/.test(c.contentFile)) {
+          try {
+            content = (await fsp.readFile(path.join(DATA, 'study-cards', c.contentFile), 'utf8')).slice(0, 6000)
+          } catch { /* grade without the note */ }
+        }
+        verdict = await gradeWithClaude([
+          'You are grading a spaced repetition coding exercise. Judge whether the attempt satisfies the task. Minor style differences are fine; wrong logic, wrong method or unhandled core cases are not. Indentation conveys blocks (Python).',
+          'TASK:\n' + ex.code.task,
+          ex.code.solution ? 'REFERENCE SOLUTION (one valid answer, not the only one):\n' + ex.code.solution : '',
+          content ? 'SOURCE NOTE (context):\n' + content : '',
+          'ATTEMPT:\n' + code,
+          'Reply with ONLY this JSON, nothing else: {"pass": true|false, "feedback": "max 60 words, direct, name the specific fix if it fails, never use an em dash"}',
+        ].filter(Boolean).join('\n\n'))
+      }
+      const pass = verdict ? verdict.pass : staticPass
+      const feedback = verdict?.feedback
+        || (staticPass
+          ? 'Static checks pass. The full grader was unavailable, so treat this as a light tick.'
+          : 'Static checks failed; see the hints below.')
+      return json(res, 200, { ok: true, pass, graded: Boolean(verdict), checks, feedback, suggested: pass ? 3 : 1 })
     }
     if (url.pathname === '/api/uni-done' && req.method === 'POST') {
       // Tick an assignment off the University board. done:true remembers the

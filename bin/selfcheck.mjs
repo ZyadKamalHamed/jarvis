@@ -111,7 +111,9 @@ async function main() {
   const modeBefore = fs.existsSync(modeFile) ? fs.readFileSync(modeFile, 'utf8') : null
 
   const child = spawn('node', [path.join(ROOT, 'server.mjs')], {
-    env: { ...process.env, JARVIS_PORT: String(PORT) },
+    // JARVIS_NO_LLM_CHECK keeps /api/study-check deterministic: the gate
+    // asserts the static-check path, never a live claude spawn.
+    env: { ...process.env, JARVIS_PORT: String(PORT), JARVIS_NO_LLM_CHECK: '1' },
     stdio: 'ignore',
   })
   try {
@@ -340,6 +342,29 @@ async function main() {
       upcoming: [probeQueueEntry('selfcheck-recall-career', true, 'Selfcheck interview card')],
       source: 'fsrs-engine',
     }))
+    // Exercise files for both probe cards: the plain one carries mc + code
+    // (so the reps-0 ladder and the code checker are both assertable), the
+    // career one deliberately holds banned words that must never travel in
+    // work mode. Probe ids are unique to selfcheck; files are removed in the
+    // finally, never restored.
+    const exDir = path.join(ROOT, 'data', 'study-exercises')
+    fs.mkdirSync(exDir, { recursive: true })
+    const exPlainFile = path.join(exDir, 'selfcheck-recall-plain.json')
+    const exCareerFile = path.join(exDir, 'selfcheck-recall-career.json')
+    fs.writeFileSync(exPlainFile, JSON.stringify({
+      id: 'selfcheck-recall-plain', generatedAt: past, sourceHash: 'probe',
+      mc: [{ q: 'Probe question?', options: ['a', 'b', 'c', 'd'], answer: 1, why: 'probe' }],
+      code: {
+        task: 'Probe: write a function named probe.',
+        starter: 'def ',
+        checks: [{ type: 'contains', value: 'def probe', hint: 'name the function probe' }],
+        solution: 'def probe():\n    return 1',
+      },
+    }))
+    fs.writeFileSync(exCareerFile, JSON.stringify({
+      id: 'selfcheck-recall-career', generatedAt: past, sourceHash: 'probe',
+      mc: [{ q: 'Which interview data structure?', options: ['a', 'b', 'c', 'd'], answer: 0, why: 'leetcode drill' }],
+    }))
     try {
       const stFull = await (await fetch(BASE + '/api/data')).json()
       if ((stFull.study?.queue || []).length !== 2) fail('full mode does not serve the whole recall queue')
@@ -383,12 +408,71 @@ async function main() {
         body: JSON.stringify({ id: 'selfcheck-recall-plain', rating: 9 }),
       })
       if (revBad.status !== 400) fail('/api/study-review accepted a bad rating (got ' + revBad.status + ')')
+
+      // Exercise tier endpoint: same non-oracle contract as /api/study-card,
+      // plus the reps-0 ladder must serve recognition (mc) first.
+      const exFull = await fetch(BASE + '/api/study-exercise?id=selfcheck-recall-plain')
+      if (exFull.status !== 200) fail('/api/study-exercise plain card not served (got ' + exFull.status + ')')
+      else {
+        const exBody = await exFull.json()
+        if (exBody.tier !== 'mc') fail('reps-0 card did not serve the mc tier (got ' + exBody.tier + ')')
+        if ('career' in exBody) fail('/api/study-exercise serves the career flag key')
+        if (exBody.exercise?.solution || exBody.exercise?.checks) fail('/api/study-exercise ships solution or checks to the client')
+      }
+      const exCareerWork = await fetch(BASE + '/api/study-exercise?work=1&id=selfcheck-recall-career')
+      if (exCareerWork.status !== 404) fail('career exercise visible in work mode (got ' + exCareerWork.status + ')')
+      const exCareerFull = await fetch(BASE + '/api/study-exercise?id=selfcheck-recall-career')
+      if (exCareerFull.status !== 200) fail('career exercise not served in full mode (got ' + exCareerFull.status + ')')
+      for (const q of ['', '?work=1']) {
+        const r = await fetch(BASE + '/api/study-exercise' + (q ? q + '&' : '?') + 'id=selfcheck-no-such-card')
+        if (r.status !== 404) fail('/api/study-exercise unknown id not 404 in ' + (q ? 'work' : 'full') + ' mode (got ' + r.status + ')')
+      }
+      const exTrav = await fetch(BASE + '/api/study-exercise?id=..%2F..%2F.env')
+      if (exTrav.status !== 400) fail('/api/study-exercise traversal id not rejected (got ' + exTrav.status + ')')
+
+      // Code checker: deterministic static path (JARVIS_NO_LLM_CHECK set at
+      // boot), career guard before any read or spawn, body validation.
+      const chkPass = await fetch(BASE + '/api/study-check', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ id: 'selfcheck-recall-plain', code: 'def probe():\n    return 1' }),
+      })
+      if (chkPass.status !== 200) fail('/api/study-check rejected a legal check (got ' + chkPass.status + ')')
+      else {
+        const v = await chkPass.json()
+        if (v.pass !== true) fail('/api/study-check static pass not recognised')
+        if (v.graded !== false) fail('/api/study-check spawned a grader despite JARVIS_NO_LLM_CHECK')
+        if (v.suggested !== 3) fail('/api/study-check pass did not suggest GOOD')
+      }
+      const chkFail = await fetch(BASE + '/api/study-check', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ id: 'selfcheck-recall-plain', code: 'x = 1' }),
+      })
+      if (chkFail.status !== 200) fail('/api/study-check failed on a wrong answer (got ' + chkFail.status + ')')
+      else {
+        const v = await chkFail.json()
+        if (v.pass !== false) fail('/api/study-check passed code missing every check')
+        if (!(v.checks || []).some(k => !k.ok && k.hint)) fail('/api/study-check failure carries no hint')
+      }
+      const chkCareerWork = await fetch(BASE + '/api/study-check?work=1', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ id: 'selfcheck-recall-career', code: 'def x(): pass' }),
+      })
+      if (chkCareerWork.status !== 404) fail('career card checkable in work mode (got ' + chkCareerWork.status + ')')
+      const chkNoCode = await fetch(BASE + '/api/study-check', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ id: 'selfcheck-recall-plain', code: '' }),
+      })
+      if (chkNoCode.status !== 400) fail('/api/study-check accepted an empty body (got ' + chkNoCode.status + ')')
+
       note('active recall: career card invisible at work, stats recomputed, endpoints 404-match, ratings validated')
+      note('recall exercises: mc tier at reps 0, no solution leaks, career 404s, static checker deterministic')
     } finally {
       if (stateBefore === null) fs.unlinkSync(stateFile)
       else fs.writeFileSync(stateFile, stateBefore)
       if (studyBefore === null) fs.unlinkSync(studyFile)
       else fs.writeFileSync(studyFile, studyBefore)
+      if (fs.existsSync(exPlainFile)) fs.unlinkSync(exPlainFile)
+      if (fs.existsSync(exCareerFile)) fs.unlinkSync(exCareerFile)
     }
 
     // /api/guide mirrors the dismiss contract: career guides answer 404 in
