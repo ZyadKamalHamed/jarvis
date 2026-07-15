@@ -134,6 +134,7 @@ async function main() {
     if ((work.emails?.accounts || []).some(a => a.jobhunt)) fail('jobhunt account present in work mode')
     if (work.wins != null) fail('wins (impact log) present in work mode')
     if ((work.metrics || []).some(m => m.pipelines && 'career' in m.pipelines)) fail('career pipeline in work-mode metrics')
+    if ((work.metrics || []).some(m => 'note' in m)) fail('metrics run note (free text) present in work mode')
     if ((work.proposals || []).some(p => p.career)) fail('career proposal present in work mode')
     note('work-mode payload is clean (' + BANNED.length + ' banned terms checked)')
 
@@ -213,6 +214,92 @@ async function main() {
     })
     if (uniBad.status !== 404) fail('/api/uni-done unknown id not 404 (got ' + uniBad.status + ')')
     else note('/api/uni-done rejects unknown assignments')
+
+    // The day board is a stealth surface: career tasks are filtered from the
+    // work payload with their flag key shed, and every board endpoint answers
+    // 404 for a career id in work mode, identical to an unknown id. Probe it
+    // with a synthetic board (career title deliberately holds a banned word)
+    // and restore the real file byte-identically afterwards.
+    const dayFile = path.join(ROOT, 'data', 'daytasks.json')
+    const dayBefore = fs.existsSync(dayFile) ? fs.readFileSync(dayFile) : null
+    const sydneyToday = new Date().toLocaleDateString('en-CA', { timeZone: 'Australia/Sydney' })
+    fs.writeFileSync(dayFile, JSON.stringify({
+      date: sydneyToday,
+      capacityMin: 120,
+      tasks: [
+        { id: 'selfcheck-plain', title: 'Selfcheck plain probe', kind: 'personal', est: 10, career: false, done: false },
+        { id: 'selfcheck-career-probe', title: 'Selfcheck interview probe', kind: 'career', est: 10, career: true, done: false },
+        { id: 'selfcheck-overflow', title: 'Selfcheck overflow probe', kind: 'personal', est: 10, career: false, overflow: true, done: false },
+      ],
+    }))
+    try {
+      const dayFull = await (await fetch(BASE + '/api/data')).json()
+      if ((dayFull.daytasks?.tasks || []).length !== 3) fail('full mode does not serve the whole day board')
+      const dayWork = await (await fetch(BASE + '/api/data?work=1')).json()
+      const workTasks = dayWork.daytasks?.tasks || []
+      if (workTasks.length !== 2) fail('work-mode day board did not filter the career task (' + workTasks.length + ' served)')
+      if (workTasks.some(t => 'career' in t)) fail('work-mode day board carries the career flag key')
+      const dayBlob = JSON.stringify(dayWork).toLowerCase()
+      for (const term of BANNED) {
+        if (dayBlob.includes(term)) fail(`work-mode payload with career day task leaks banned term: "${term}"`)
+      }
+      const dayTickWork = await fetch(BASE + '/api/daytask?work=1', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ id: 'selfcheck-career-probe', done: true }),
+      })
+      if (dayTickWork.status !== 404) fail('career day task tickable in work mode (got ' + dayTickWork.status + ')')
+      const dayMoveWork = await fetch(BASE + '/api/daytask-move?work=1', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ id: 'selfcheck-career-probe', dir: 'up' }),
+      })
+      if (dayMoveWork.status !== 404) fail('career day task movable in work mode (got ' + dayMoveWork.status + ')')
+      for (const q of ['', '?work=1']) {
+        const r = await fetch(BASE + '/api/daytask-move' + q, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ id: 'selfcheck-no-such-task', dir: 'up' }),
+        })
+        if (r.status !== 404) fail('/api/daytask-move unknown id not 404 in ' + (q ? 'work' : 'full') + ' mode (got ' + r.status + ')')
+      }
+      const badDir = await fetch(BASE + '/api/daytask-move', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ id: 'selfcheck-plain', dir: 'sideways' }),
+      })
+      if (badDir.status !== 400) fail('/api/daytask-move accepted a bad direction (got ' + badDir.status + ')')
+      const badAdd = await fetch(BASE + '/api/daytask-add', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ title: '' }),
+      })
+      if (badAdd.status !== 400) fail('/api/daytask-add accepted an empty title (got ' + badAdd.status + ')')
+      const dashAdd = await fetch(BASE + '/api/daytask-add', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ title: 'an em dash — in a title' }),
+      })
+      if (dashAdd.status !== 400) fail('/api/daytask-add accepted an em dash (got ' + dashAdd.status + ')')
+      // Mode-visible reorder semantics: in work mode the plain task is the
+      // only visible main task, so down must demote it to overflow instead of
+      // silently swapping with the invisible career row.
+      const demote = await fetch(BASE + '/api/daytask-move?work=1', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ id: 'selfcheck-plain', dir: 'down' }),
+      })
+      if (!demote.ok) fail('/api/daytask-move rejected a legal work-mode move (got ' + demote.status + ')')
+      else {
+        const after = JSON.parse(fs.readFileSync(dayFile, 'utf8'))
+        const plain = after.tasks.find(t => t.id === 'selfcheck-plain')
+        if (!plain?.overflow) fail('work-mode down on the last visible main task did not demote to overflow')
+      }
+      note('day board: career task invisible at work, flag keys shed, endpoints 404-match, moves respect mode visibility')
+    } finally {
+      if (dayBefore === null) fs.unlinkSync(dayFile)
+      else fs.writeFileSync(dayFile, dayBefore)
+    }
 
     // /api/guide mirrors the dismiss contract: career guides answer 404 in
     // work mode, identical to a missing guide, so the endpoint cannot confirm

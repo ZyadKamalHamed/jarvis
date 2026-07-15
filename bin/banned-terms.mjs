@@ -9,4 +9,7 @@ export const BANNED = [
   'salary review', 'garvan', 'seek.com', 'jobs surfaced', 'apps sent',
   'hirevue', 'greenhouse', 'magtanong', 'sonder', 'deloitte', 'commbank',
   'amberjack', 'gradconnection', 'avature', 'assessments.amazon',
+  // 15 Jul lesson: agent run-notes named application targets on
+  // work-visible surfaces; the employers he applies to are banned words too.
+  'westpac', 'siemens',
 ]

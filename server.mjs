@@ -12,6 +12,7 @@ import crypto from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { BANNED } from './bin/banned-terms.mjs'
+import { carryForward, moveVisible, makeId, insertMain } from './bin/dayplan.mjs'
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url))
 const DATA = path.join(ROOT, 'data')
@@ -105,7 +106,12 @@ function stripCareer(payload) {
     out.metrics = out.metrics.map(m => {
       const pipelines = { ...(m.pipelines || {}) }
       delete pipelines.career
-      return { ...m, pipelines }
+      // LESSON 15 Jul: the run note is agent-authored free text composed
+      // with career context in scope (it named application targets). Like
+      // the inbox it cannot be auto-classified, so it never travels; the
+      // trend strip only needs the pipeline statuses anyway.
+      const { note, ...rest } = m
+      return { ...rest, pipelines }
     })
   }
   if (out.briefing) {
@@ -127,9 +133,17 @@ function stripCareer(payload) {
     }
   }
   if (out.system) {
+    // Career pipeline rows vanish; the survivors keep their notes ONLY when
+    // the note scans clean, because the morning agent writes those notes with
+    // career context in scope and has already leaked employer names into
+    // work-visible rows once (15 Jul). A stripped note degrades to the bare
+    // status on the HUD, which is honest and safe.
+    const cleans = s => !BANNED.some(t => String(s || '').toLowerCase().includes(t))
     out.system = {
       ...out.system,
-      pipelines: (out.system.pipelines || []).filter(p => p.id !== 'career' && !p.career),
+      pipelines: (out.system.pipelines || [])
+        .filter(p => p.id !== 'career' && !p.career)
+        .map(p => (cleans(p.note) ? p : { ...p, note: '' })),
     }
   }
   if (out.proposals) {
@@ -139,6 +153,12 @@ function stripCareer(payload) {
   }
   if (out.todos) {
     out.todos = out.todos.filter(t => !t.career).map(({ career, ...rest }) => rest)
+  }
+  if (out.daytasks) {
+    out.daytasks = {
+      ...out.daytasks,
+      tasks: (out.daytasks.tasks || []).filter(t => !t.career).map(({ career, ...rest }) => rest),
+    }
   }
   if (out.agents) {
     // agentsRoster already filters by mode; this repeats it at the chokepoint
@@ -286,6 +306,14 @@ async function aggregate(mode) {
   // never annotate in work mode, so the button cannot appear there at all.
   const guides = await guidesIndex()
   for (const t of payload.todos) {
+    const g = guides.find(g => g.todoId === t.id && !(mode === 'work' && g.career))
+    if (g) t.guide = g.slug
+  }
+  // The day board lives and dies with its date: a stale or absent file means
+  // no board at all, so yesterday's list never carries into a new morning.
+  const day = await readJson(path.join(DATA, 'daytasks.json'))
+  payload.daytasks = day?.date === localDate() && Array.isArray(day.tasks) ? day : null
+  for (const t of payload.daytasks?.tasks || []) {
     const g = guides.find(g => g.todoId === t.id && !(mode === 'work' && g.career))
     if (g) t.guide = g.slug
   }
@@ -450,6 +478,17 @@ function trimmedSnapshot(payload) {
     reviewsDue: payload.study?.queue?.length ?? null,
     proposalsPending: (payload.proposals || []).filter(p => !p.status).map(p => p.title),
     weather: payload.weather ? { nowC: payload.weather.current?.tempC, today: payload.weather.today } : null,
+    // The open day board rides along (ids included) so plan questions and
+    // voice edits need no file reads. Built from the mode-filtered payload,
+    // so work mode inherits the career strip automatically.
+    dayBoard: payload.daytasks
+      ? {
+          capacityMin: payload.daytasks.capacityMin ?? null,
+          open: (payload.daytasks.tasks || []).filter(t => !t.done)
+            .map(t => ({ id: t.id, title: t.title, est: t.est ?? null, kind: t.kind, overflow: !!t.overflow })),
+          doneCount: (payload.daytasks.tasks || []).filter(t => t.done).length,
+        }
+      : null,
   }
 }
 
@@ -996,6 +1035,78 @@ const server = http.createServer(async (req, res) => {
       await writeJsonAtomic(file, todos)
       notifyClients()
       return json(res, 200, { ok: true })
+    }
+    if (url.pathname === '/api/daytask' && req.method === 'POST') {
+      // Tick a task on the day board, untick restores it. Career tasks answer
+      // 404 in work mode, identical to a bad id: a 403 would confirm to a
+      // prober that a task with that id exists (same reasoning as /api/dismiss).
+      const body = await readBody(req)
+      const file = path.join(DATA, 'daytasks.json')
+      const day = await readJson(file)
+      const hit = day?.date === localDate() ? (day.tasks || []).find(t => t.id === body.id) : null
+      if (!hit || (hit.career && (await currentMode(url)) === 'work')) {
+        return json(res, 404, { error: 'unknown task' })
+      }
+      hit.done = !!body.done
+      hit.doneAt = hit.done ? new Date().toISOString() : null
+      await writeJsonAtomic(file, day)
+      notifyClients()
+      return json(res, 200, { ok: true })
+    }
+    if (url.pathname === '/api/daytask-move' && req.method === 'POST') {
+      // Reorder within today's board. The neighbour is found among tasks
+      // visible in the caller's mode, so an office reorder never silently
+      // swaps with an invisible career row; career ids answer 404 in work
+      // mode exactly like unknown ids (same reasoning as /api/daytask).
+      const body = await readBody(req)
+      if (!['up', 'down', 'top', 'bottom'].includes(body.dir)) return json(res, 400, { error: 'dir must be up|down|top|bottom' })
+      const mode = await currentMode(url)
+      const file = path.join(DATA, 'daytasks.json')
+      const day = await readJson(file)
+      const hit = day?.date === localDate() ? (day.tasks || []).find(t => t.id === body.id) : null
+      if (!hit || (hit.career && mode === 'work')) return json(res, 404, { error: 'unknown task' })
+      const r = moveVisible(day, body.id, body.dir, mode === 'work' ? t => !t.career : () => true)
+      if (!r.ok) return json(res, 400, { error: r.error })
+      if (r.changed) {
+        await writeJsonAtomic(file, day)
+        notifyClients()
+      }
+      return json(res, 200, { ok: true, changed: !!r.changed })
+    }
+    if (url.pathname === '/api/daytask-add' && req.method === 'POST') {
+      // Quick add from the HUD (td: prefix or the board's add box). Never
+      // accepts flags over HTTP: everything added this way is a plain
+      // personal task, so the endpoint cannot be used to plant or probe
+      // career rows. A stale board is carried forward first, which is the
+      // bleed rule working as designed.
+      const body = await readBody(req)
+      const title = String(body.title || '').trim()
+      if (!title || title.length > 140) return json(res, 400, { error: 'title must be 1..140 chars' })
+      if (title.includes('—')) return json(res, 400, { error: 'no em dashes, house rule' })
+      const est = body.est === undefined || body.est === null ? undefined : Number(body.est)
+      if (est !== undefined && !(Number.isInteger(est) && est >= 0 && est <= 480)) return json(res, 400, { error: 'est must be minutes, 0..480' })
+      const urlField = body.url === undefined ? undefined : String(body.url)
+      if (urlField !== undefined && !/^https?:\/\//.test(urlField)) return json(res, 400, { error: 'url must be http(s)' })
+      const file = path.join(DATA, 'daytasks.json')
+      const today = localDate()
+      let day = await readJson(file)
+      if (!day || !Array.isArray(day.tasks)) day = { date: today, tasks: [] }
+      else if (day.date !== today) day = carryForward(day, today)
+      const task = {
+        id: makeId(title, day.tasks.map(t => t.id)),
+        title,
+        kind: 'personal',
+        ...(est !== undefined ? { est } : {}),
+        ...(urlField !== undefined ? { url: urlField } : {}),
+        career: false,
+        overflow: false,
+        done: false,
+        doneAt: null,
+      }
+      insertMain(day, task)
+      await writeJsonAtomic(file, day)
+      notifyClients()
+      return json(res, 200, { ok: true, id: task.id })
     }
     if (url.pathname === '/api/uni-done' && req.method === 'POST') {
       // Tick an assignment off the University board. done:true remembers the

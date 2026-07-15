@@ -19,7 +19,7 @@ The bar: nothing in the briefing may be homework you could have already done. If
 6. **Work.** Refresh `data/work.json` from reachable sources; TGS projects list carries through from `context/work-projects.md` with only observable status changes.
 7. **Weather.** Read `data/weather.json` (the server keeps it fresh from Open-Meteo; do not fetch it yourself). If today's `rainPct` is 50 or higher or the label mentions rain or storm, the day plan says so in one practical line (umbrella for the commute, indoor alternative if training outdoors). If the file is missing or older than 12 hours, skip weather commentary; never guess.
 7b. **Calendar.** Run `node bin/calendar.mjs` then read `data/calendar.json`. Timed events are fixed points the day plan must route around; name any event that collides with the default train/gym/evening shape. If `status` is not `ok`, mention the setup note once in the general section and move on.
-8. **Inbox triage.** Read `data/inbox.json` (quick captures from the prompt, `in:` prefix). Fold each undone item into the day plan, a todo, or a proposal, whichever fits, then mark it processed: `curl -s http://127.0.0.1:4777/api/capture -X POST -H 'content-type: application/json' -d '{"id":"<id>","done":true}'`. An item you cannot place stays undone and gets a line in the briefing instead.
+8. **Inbox triage.** Read `data/inbox.json` (quick captures from the prompt, `in:` prefix). Fold each undone item into the day board, a todo, or a proposal, whichever fits, then mark it processed: `curl -s http://127.0.0.1:4777/api/capture -X POST -H 'content-type: application/json' -d '{"id":"<id>","done":true}'`. An item you cannot place stays undone and gets a line in the briefing instead.
 
 ## Phase 2: think and prepare (the agentic core, cap 7 minutes)
 
@@ -30,27 +30,25 @@ For every act-now or today item found in phase 1, do the preparation now:
 - **Resolve unknowns with research.** If a recommendation depends on a fact you do not have (which platform a company tests on, how long an assessment window usually is, what a form needs), WebSearch it now and bake the ANSWER into the briefing with the source. One targeted search beats a vague suggestion.
 - **Propose routines.** When a recurring habit would clearly serve a goal (daily assessment drills, a weekly follow-up sweep), append a proposal to `data/proposals.json`: `{"id": "<slug>", "title": "...", "summary": "one paragraph: what, why, the evidence", "routine": "<exact recurring block, e.g. train-am: 15min HireVue drills Mon-Fri>", "career": true|false, "createdAt": "<ISO>"}`. Do not re-propose anything dismissed or already proposed in the last 14 days. Accepted proposals land in `data/routines.json` and MUST be honoured by phase 3 from the next morning on.
 
-## Phase 3: the day plan
+## Phase 3: the day board
 
-Read `data/schedule.json` (his fixed shape: work 9:00 to 17:30, gym after work, about 20 minutes of train each way) and `data/routines.json` (accepted recurring blocks). Compose the plan:
+`data/daytasks.json` is the single prioritised list for his whole day: uni, career, gym, errands, operator tasks, all of it, in the order he should attack it. The HUD renders it in focus mode and as the Today strip; he ticks, reorders and adds through the day. Compose it ONLY through the CLI, never by writing the file:
 
-- **Train in (about 20 min):** default is the DSA/drill routine; override it only when something more urgent genuinely fits 20 minutes (booking a slot, a short reply, a practice game set). Say which and why in one line.
-- **Lunch (optional, 20 min):** only assign when something is time-critical.
-- **Train home (about 20 min):** second drill slot or overflow.
-- **Evening block after the gym (one task, 1 to 3 hours, roughly 19:45 onward):** the single highest-priority item tonight, with the runner-up named so he can consciously trade. Career deadlines beat uni work unless a submission is due within 48 hours; a due-tonight submission beats everything.
-- **Weekends:** also read `data/todos.json` and fold the open operator tasks into the plan (they are his own system-upkeep reminders; high priority ones get named slots, the rest get a mention). Tick nothing yourself; only he marks them done.
-
-Stealth split (binding): career tasks go in a `module: "career"` section (title "Career ops today"); the work-safe remainder (uni, gym, study, chores) goes in `module: "general"` (title "Day plan"). A single mixed section is a stealth leak and a selfcheck failure.
+1. **Carry first.** `node bin/dayplan.mjs carry` rolls yesterday's undone tasks forward with their age showing (skip if the file is already today's). Then write the full board with `node bin/dayplan.mjs plan --file <tmp.json>` (schema in CLAUDE.md). A replan preserves his ticks for matching ids, so re-running is safe.
+2. **Sources, in priority order:** uni flags from phase 1 (a submission due within 48 hours leads outright); career deadlines and today's pick from AIOS; accepted `data/routines.json` blocks (honour `pausedUntil` and `until`; the winter intensive reshapes Mon-Thu until 24 Jul); open `data/todos.json` operator tasks (high priority any day, the rest on weekends); unplaced inbox captures; the gym from `data/schedule.json`. Calendar events are anchors the ORDER routes around, not tasks; name any collision in the briefing instead. Career deadlines beat uni work unless that 48-hour rule fires; a due-tonight submission beats everything.
+3. **Every task gets:** an honest `est` in minutes (round to 5; omit rather than guess), a `kind`, `career: true` on anything jobhunt, interview, assessment or DSA related (binding; the server strips these in work mode), and the deep link that saves him a fetch: `url` for Canvas assignments (uni.json carries them now) and apply pages, `draft` for prepared correspondence, `doc` for repo docs. A job-application task links the apply page AND its tailored kit written to `drafts/` and referenced via `draft`.
+4. **capacityMin:** the free minutes you can actually count after work or uni hours, commute, gym and calendar events. Fill the main list to roughly capacity in priority order; everything beyond it gets `"overflow": true` (the bleed zone under IF TIME REMAINS) rather than pretending the day is longer than it is. Train-sized tasks (est 20 or less) sit where a commute would take them in the order.
+5. Tick nothing yourself; only he marks tasks done.
 
 ## Phase 4: write the briefing
 
 `data/briefing.json`, atomic write:
 
 - `headline`: the single most important thing today, one sentence. `workHeadline`: the career-free equivalent.
-- Sections in priority order, each tagged with its `module` (career content ALWAYS `module: "career"`, including DSA and drills). Include the day-plan sections from phase 3.
+- Sections in priority order, each tagged with its `module` (career content ALWAYS `module: "career"`, including DSA and drills). ONE general section describes the shape of the day (anchors, capacity, what leads and why); it points at the board and never duplicates board items as prose. Career narrative that needs telling (deadline context, interview prep reasoning) stays in a `module: "career"` section.
 - **Actions** on any section where seeing or doing something is the point: `"actions": [{"label": "OPEN ASSESSMENT", "url": "https://...", "autoOpen": true}, {"label": "VIEW DRAFT", "draft": "2026-07-10-amazon-extension.md"}]`. `autoOpen` goes on at most THREE actions across the whole briefing, reserved for things he must see this morning; everything else is a button. Tab spam is failure.
 - If `data/evolution.json` has `changed: true`, add the low-priority "While you slept" general section with its work-safe `summary` verbatim.
-- `voiceScript`: spoken briefing, JARVIS persona, under 120 seconds, "Sir" once at the open. When tabs were pre-opened, say so ("I have put the assessment on your screen"). Close by naming the first move of the day and asking one question: "Shall we start there?"
+- `voiceScript`: spoken briefing, JARVIS persona, under 120 seconds, "Sir" once at the open. Walk the top of the board in order (two or three items, with their estimates) rather than reading every section. When tabs were pre-opened, say so ("I have put the assessment on your screen"). Close by naming the first move of the day, which is the top of the board, and asking one question: "Shall we start there?"
 - `workVoiceScript`: same script with every career line removed.
 
 ## Phase 5: pull it up (full mode only)
@@ -68,6 +66,7 @@ In full mode: for each `autoOpen` action, run `open <url>` so the tabs are sitti
 
 ## Guardrails (binding)
 
+- Free text on work-visible surfaces must never name employers, applications, assessments or career artefacts: that means `workHeadline`, `workVoiceScript`, `module: "general"` sections, and `system.json` notes on non-career pipelines. Career detail belongs on the career pipeline note, career sections and full-mode fields. The metrics run note never reaches work mode (the server sheds it), but write it as if it might.
 - Atomic writes only. Extend schemas backwards-compatibly. No fabricated data, ever.
 - READ ONLY outside this repo: AIOS is read-only, the web is read-only (HEAD checks and GET pages; never log in, submit, apply or accept anything).
 - Never auto-send email, chat replies or applications. Drafts in `drafts/` are the ceiling of your authority. The Telegram ready-ping is the only outbound message.

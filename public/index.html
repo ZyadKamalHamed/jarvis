@@ -51,7 +51,7 @@
   </div>
   <div class="rail-right">
     <button class="rail-btn silence" id="voice-stop" title="Stop JARVIS speaking (Esc)">SILENCE</button>
-    <button class="rail-btn" id="focus-btn" title="Focus mode: uni panel and a pomodoro, nothing else">FOCUS</button>
+    <button class="rail-btn" id="focus-btn" title="Focus mode: the day board and a pomodoro, nothing else">FOCUS</button>
     <button class="rail-btn" id="log-btn" title="Conversation log">LOG</button>
     <button class="rail-btn" id="vol-btn" title="Volume mixer">VOL</button>
     <button class="rail-btn" id="help-btn" title="Help: shortcuts and commands (? or Cmd+/)">HELP</button>
@@ -75,6 +75,7 @@
       </div>
     </header>
     <p class="headline" id="briefing-headline"></p>
+    <div id="day-list"></div>
     <div class="feed" id="briefing-feed"></div>
     <div id="proposals"></div>
   </section>
@@ -138,6 +139,12 @@
       </div>
       <div class="pomo-count" id="pomo-count"></div>
     </div>
+  </section>
+
+  <section class="panel span6" id="panel-day">
+    <header class="panel-head"><h2>Today</h2><span class="chip" id="day-chip"></span></header>
+    <div id="day-board"></div>
+    <div class="day-add"><input id="day-add-input" placeholder="Add to today... (buy milk 15m)" autocomplete="off" spellcheck="false"></div>
   </section>
 
   <section class="panel span6" id="panel-uni">
@@ -207,12 +214,13 @@
     <div><b>M</b> mic on, M again to send</div>
     <div><b>Esc</b> silence, close overlays, leave focus mode</div>
     <div class="help-h">COMMANDS (typed into the prompt)</div>
+    <div><b>td: &lt;task&gt;</b> add it to today's board; a trailing 25m or 1.5h sets the estimate</div>
     <div><b>in: &lt;thought&gt;</b> capture it; the morning run files it where it belongs</div>
     <div><b>win: &lt;what happened&gt;</b> log a win to the record (review ammunition)</div>
     <div><b>fb: &lt;request&gt;</b> file an improvement for tonight's evolve cycle</div>
     <div><b>anything else</b> is a question straight to me</div>
     <div class="help-h">BUTTONS</div>
-    <div><b>FOCUS</b> uni panel plus pomodoro, nothing else</div>
+    <div><b>FOCUS</b> the day board plus a pomodoro, nothing else</div>
     <div><b>SPEAK</b> reads the briefing and opens its tabs</div>
     <div><b>VOL</b> mixer: levels plus the voice engine (ElevenLabs or Mac)</div>
     <div><b>LOG</b> conversation record, &#9654; replays any reply aloud</div>

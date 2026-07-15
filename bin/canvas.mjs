@@ -73,6 +73,7 @@ for (const course of courses) {
       due: a.due_at,
       submitted,
       points: a.points_possible ?? null,
+      url: a.html_url || null,
     })
   }
 }
@@ -102,6 +103,7 @@ const merged = pulled.map(p => {
     nextAction: old?.nextAction || '',
     flags: old?.flags || [],
     points: p.points,
+    url: p.url || old?.url || null,
     ...(old?.doneAt ? { doneAt: old.doneAt } : {}),
     ...(old?.prevStatus ? { prevStatus: old.prevStatus } : {}),
   }

@@ -135,6 +135,7 @@ function connectSSE() {
 function renderAll() {
   renderRail()
   renderBriefing()
+  renderDay()
   renderCore()
   renderComms()
   renderCareer()
@@ -222,6 +223,170 @@ function renderBriefing() {
   renderProposals()
 }
 
+// ---------- the day board ----------
+// One prioritised list for the whole day, composed by the morning run and
+// reshuffled by voice or the arrows. Array order IS the priority order;
+// overflow tasks live under the IF TIME REMAINS divider; done rows sink to
+// the bottom, struck through and restorable. Full board in focus mode, a
+// calm three-row strip on the home dashboard.
+
+function fmtMin(m) {
+  if (!m) return '0M'
+  const h = Math.floor(m / 60), r = m % 60
+  return h ? `${h}H${r ? ' ' + String(r).padStart(2, '0') + 'M' : ''}` : `${r}M`
+}
+
+const HG_SVG = '<svg class="hg" viewBox="0 0 10 12" aria-hidden="true"><path d="M2 1.2h6M2 10.8h6M2.6 1.6l4.8 8.8M7.4 1.6l-4.8 8.8" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>'
+const KIND_LABEL = { uni: 'UNI', study: 'STUDY', career: 'CAREER', fitness: 'GYM', personal: 'LIFE', ops: 'OPS' }
+
+function estChip(t) {
+  return t.est ? `<span class="est-chip" title="Roughly ${t.est} minutes">${HG_SVG}${fmtMin(t.est)}</span>` : ''
+}
+
+function carriedChip(t) {
+  if (!t.carried || !DATA.daytasks?.date) return ''
+  const days = Math.round((new Date(DATA.daytasks.date) - new Date(t.carried)) / 86400000)
+  return days >= 1 ? `<span class="carried-chip" title="On the list since ${esc(t.carried)}">${days}D OLD</span>` : ''
+}
+
+function dayTotals() {
+  const tasks = DATA.daytasks?.tasks || []
+  const open = tasks.filter(t => !t.done)
+  const main = open.filter(t => !t.overflow)
+  const sum = main.reduce((a, t) => a + (t.est || 0), 0)
+  const cap = DATA.daytasks?.capacityMin
+  let text = open.length ? `${open.length} TO GO` : 'DAY CLEAR'
+  if (sum) text += ` · ${fmtMin(sum)}` + (cap ? ` OF ~${fmtMin(cap)}` : '')
+  const cls = !open.length ? 'ok' : cap && sum > cap ? 'err' : 'warn'
+  return { open, main, sum, cap, text, cls, over: cap && sum > cap }
+}
+
+function dayTaskActions(t) {
+  if (!(t.guide || t.url || t.draft || t.doc)) return ''
+  return `<div class="feed-actions">
+    ${t.guide ? `<button class="act-btn yes" data-guide="${esc(t.guide)}">&#9654; WALKTHROUGH</button>` : ''}
+    ${t.draft ? `<button class="act-btn" data-draft="${esc(t.draft)}">VIEW DRAFT</button>` : ''}
+    ${t.doc ? `<button class="act-btn" data-doc="${esc(t.doc)}">DOC: ${esc(t.doc)}</button>` : ''}
+    ${t.url ? `<button class="act-btn" data-url="${esc(t.url)}">OPEN &#8599;</button>` : ''}
+  </div>`
+}
+
+function dayRow(t, { now = false, arrows = false, detail = true } = {}) {
+  const kind = KIND_LABEL[t.kind] ? `<span class="kind-chip k-${esc(t.kind)}">${KIND_LABEL[t.kind]}</span>` : ''
+  return `
+    <div class="todo day-row ${t.priority === 'high' ? 'p-high' : ''}">
+      <button class="todo-tick" data-day="${esc(t.id)}" title="Tick it off">&#10003;</button>
+      <div class="todo-main">
+        <div class="todo-title">${now ? '<span class="now-tag">NOW</span>' : ''}${esc(t.title)}${kind}${estChip(t)}${carriedChip(t)}</div>
+        ${detail && t.detail ? `<div class="todo-detail">${esc(t.detail)}</div>` : ''}
+        ${detail ? dayTaskActions(t) : ''}
+      </div>
+      ${arrows ? `<div class="mv-col">
+        <button class="mv" data-mv="up" data-id="${esc(t.id)}" title="Move up">&#9650;</button>
+        <button class="mv" data-mv="down" data-id="${esc(t.id)}" title="Move down">&#9660;</button>
+      </div>` : ''}
+    </div>`
+}
+
+function dayDoneRow(t) {
+  return `
+    <div class="todo todo-done">
+      <button class="todo-tick on" data-day="${esc(t.id)}" data-undone="1" title="Put it back on the list">&#10003;</button>
+      <div class="todo-main"><div class="todo-title">${esc(t.title)}${t.est ? `<span class="est-chip dim">${fmtMin(t.est)}</span>` : ''}</div></div>
+    </div>`
+}
+
+function renderDay() {
+  renderDayStrip()
+  renderDayBoard()
+}
+
+function renderDayStrip() {
+  // The home presence: top three of the main list, never the whole board,
+  // so the priority feed keeps the room. FULL BOARD jumps to focus mode.
+  const box = $('#day-list')
+  const tasks = DATA.daytasks?.tasks || []
+  if (!tasks.length) { box.innerHTML = ''; return }
+  const { main, open, text, cls } = dayTotals()
+  const done = tasks.filter(t => t.done)
+  const top = main.slice(0, 3)
+  const rest = open.length - top.length
+  box.innerHTML = `
+    <header class="panel-head sub"><h2>Today</h2><span class="chip ${cls}">${text}</span></header>
+    ${top.map((t, i) => dayRow(t, { now: i === 0, detail: false })).join('')
+      || '<p class="empty">Main list clear. Anything left lives under the divider on the board.</p>'}
+    <div class="day-strip-foot">
+      <span>${rest > 0 ? `+${rest} more` : ''}${rest > 0 && done.length ? ' · ' : ''}${done.length ? `${done.length} done` : ''}</span>
+      <button class="chip-btn" id="day-full" title="The full board, in focus mode (Cmd+F)">FULL BOARD</button>
+    </div>`
+}
+
+function renderDayBoard() {
+  // The focus-mode board: everything, in order, with the reorder arrows.
+  const box = $('#day-board')
+  const chip = $('#day-chip')
+  const day = DATA.daytasks
+  if (!day) {
+    chip.textContent = 'NO BOARD'
+    chip.className = 'chip warn'
+    box.innerHTML = '<p class="empty">No board for today yet. The morning run composes one at 7:30, or start it yourself: add a task below, or tell me the plan and I will lay it out.</p>'
+    return
+  }
+  const { text, cls, over } = dayTotals()
+  chip.textContent = text
+  chip.className = 'chip ' + cls
+  chip.title = over ? 'Planned minutes exceed the free time I can see today. Something belongs in overflow.' : ''
+  const tasks = day.tasks || []
+  const main = tasks.filter(t => !t.done && !t.overflow)
+  const overflow = tasks.filter(t => !t.done && t.overflow)
+  const done = tasks.filter(t => t.done)
+  box.innerHTML =
+    (main.map((t, i) => dayRow(t, { now: i === 0, arrows: true })).join('')
+      || '<p class="empty">Main list clear. A rare and beautiful sight, sir.</p>')
+    + (overflow.length
+      ? `<div class="day-divider"><span>IF TIME REMAINS</span></div>` + overflow.map(t => dayRow(t, { arrows: true })).join('')
+      : '')
+    + done.map(dayDoneRow).join('')
+}
+
+function parseDayAdd(text) {
+  // A trailing "25m" or "1.5h" becomes the estimate.
+  let title = text.trim()
+  let est
+  const m = title.match(/\s+(\d+(?:\.\d+)?)\s*(m|min|mins|h|hr|hrs)$/i)
+  if (m) {
+    est = Math.round(parseFloat(m[1]) * (/^h/i.test(m[2]) ? 60 : 1))
+    title = title.slice(0, m.index).trim()
+  }
+  return { title, est }
+}
+
+async function dayAdd(text) {
+  const { title, est } = parseDayAdd(text)
+  if (!title) return { ok: false, error: 'no title' }
+  try {
+    const res = await fetch('/api/daytask-add', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ title, ...(est !== undefined ? { est } : {}) }),
+    })
+    const j = await res.json()
+    if (res.ok) fetchData()
+    return res.ok ? { ok: true, title, est } : { ok: false, error: j.error }
+  } catch (e) {
+    return { ok: false, error: e.message }
+  }
+}
+
+async function sendDayAdd(text) {
+  const panel = $('#answer'), body = $('#answer-body')
+  panel.hidden = false
+  const r = await dayAdd(text)
+  body.innerHTML = ''
+  await typewrite(body, r.ok
+    ? `On the board, sir: ${r.title}${r.est ? ', ' + fmtMin(r.est).toLowerCase() : ''}.`
+    : 'That did not land on the board: ' + (r.error || 'unknown fault'), 6)
+}
+
 function renderProposals() {
   const box = $('#proposals')
   const open = (DATA.proposals || []).filter(p => !p.status)
@@ -284,11 +449,12 @@ document.addEventListener('click', async e => {
     tick.disabled = true
     const isInbox = !!tick.dataset.inbox
     const isUni = !!tick.dataset.uni
+    const isDay = !!tick.dataset.day
     try {
-      await fetch(isInbox ? '/api/capture' : isUni ? '/api/uni-done' : '/api/todo', {
+      await fetch(isInbox ? '/api/capture' : isUni ? '/api/uni-done' : isDay ? '/api/daytask' : '/api/todo', {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          id: tick.dataset.inbox || tick.dataset.uni || tick.dataset.todo,
+          id: tick.dataset.inbox || tick.dataset.uni || tick.dataset.day || tick.dataset.todo,
           done: !tick.dataset.undone, // a ticked row's button restores instead
         }),
       })
@@ -296,6 +462,19 @@ document.addEventListener('click', async e => {
     } catch { tick.disabled = false }
     return
   }
+  const mv = e.target.closest('.mv')
+  if (mv) {
+    mv.disabled = true
+    try {
+      await fetch('/api/daytask-move', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ id: mv.dataset.id, dir: mv.dataset.mv }),
+      })
+      fetchData()
+    } catch { mv.disabled = false }
+    return
+  }
+  if (e.target.closest('#day-full')) { setFocusMode(true); return }
   const t = e.target.closest('.act-btn')
   if (!t) return
   if (t.dataset.url) openTarget(t.dataset.url)
@@ -534,7 +713,7 @@ function renderUni() {
     return `<div class="asg tickable">
       <button class="todo-tick" data-uni="${esc(a.id)}" title="Tick it off the board">&#10003;</button>
       <span class="asg-title"><span class="code">${esc(a.subject)}</span>${esc(a.title)}</span>
-      <span class="asg-due ${d.cls}">${d.text}</span>
+      <span class="asg-due ${d.cls}">${a.url ? `<button class="asg-link act-btn" data-url="${esc(a.url)}" title="Open it on Canvas">&#8599;</button>` : ''}${d.text}</span>
       <div class="asg-bar"><i style="width:${Math.min(100, a.progressPct ?? 0)}%"></i></div>
       ${a.nextAction ? `<span class="asg-next">next: ${esc(a.nextAction)}</span>` : ''}
     </div>`
@@ -917,15 +1096,29 @@ $('#ask-input').addEventListener('keydown', e => {
     const fb = text.match(/^(?:fb|feedback):\s*(.+)/i)
     const win = text.match(/^win:\s*(.+)/i)
     const cap = text.match(/^in:\s*(.+)/i)
+    const td = text.match(/^td:\s*(.+)/i)
     if (fb) sendFeedback(fb[1])
     else if (win) sendWin(win[1])
     else if (cap) sendCapture(cap[1])
+    else if (td) sendDayAdd(td[1])
     else ask(text)
     e.target.value = ''
   }
   if (e.key === 'Escape') $('#answer').hidden = true
 })
 $('#answer-close').addEventListener('click', () => { $('#answer').hidden = true })
+
+// The board's own add box: quieter than the prompt bar, no overlay, the
+// SSE refresh paints the new row.
+$('#day-add-input').addEventListener('keydown', async e => {
+  if (e.key !== 'Enter' || !e.target.value.trim()) return
+  const input = e.target
+  input.disabled = true
+  const r = await dayAdd(input.value)
+  input.disabled = false
+  if (r.ok) { input.value = '' } else { input.placeholder = r.error || 'That did not save.' }
+  input.focus()
+})
 
 // mic: Web Speech API (Chrome). Click to talk, click again (or go quiet
 // for a couple of seconds) to send. Chrome likes to end the session at the
@@ -1132,6 +1325,8 @@ function paletteActions() {
     { name: 'Volume mixer', run: () => $('#vol-btn').click() },
     { name: 'Switch voice engine (ElevenLabs / Mac)', run: () => $('#mix-engine').click() },
     { name: 'Ask JARVIS...', run: () => $('#ask-input').focus() },
+    { name: 'Add to today (td:)', run: preset('td: ') },
+    { name: 'Day board (focus mode)', run: () => setFocusMode(true) },
     { name: 'Capture a thought (in:)', run: preset('in: ') },
     { name: 'File feedback (fb:)', run: preset('fb: ') },
     { name: 'Shortcut help', run: () => showHelp() },

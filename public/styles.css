@@ -444,6 +444,8 @@ body.speaking .r-core { animation: none; }
 .todo-title { font-size: 13.5px; font-weight: 600; color: #cdeefb; }
 .todo-detail { font-size: 12px; color: var(--dim); line-height: 1.45; margin-top: 2px; }
 .todo-donecount { font-family: var(--font-mono); font-size: 9.5px; color: var(--dim); letter-spacing: .12em; margin-top: 8px; }
+.todo-done { padding: 5px 0; }
+.todo-done .todo-title { text-decoration: line-through; text-decoration-color: rgba(72,229,163,.5); color: var(--dim); font-weight: 400; }
 
 /* ---------- Stealth ---------- */
 body[data-mode="work"] .career-only { display: none; }
@@ -508,9 +510,10 @@ button:focus-visible, input:focus-visible {
 .core-cal .setup { font-size: 11px; }
 
 /* ---------- Focus mode + pomodoro ---------- */
-#panel-focus { display: none; }
+/* Focus mode is the pomodoro plus the day board; everything else steps out. */
+#panel-focus, #panel-day { display: none; }
 body[data-focus="1"] .hud > .panel { display: none; }
-body[data-focus="1"] #panel-focus, body[data-focus="1"] #panel-uni { display: block; }
+body[data-focus="1"] #panel-focus, body[data-focus="1"] #panel-day { display: block; }
 .rail-btn.on { color: var(--cyan); border-color: var(--cyan); }
 .pomo { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 22px 0 10px; }
 .pomo-time {
@@ -522,6 +525,61 @@ body[data-focus="1"] #panel-focus, body[data-focus="1"] #panel-uni { display: bl
 .pomo-phase.break { color: var(--amber); }
 .pomo-controls { display: flex; gap: 10px; }
 .pomo-count { font-family: var(--font-mono); font-size: 11px; color: var(--dim); letter-spacing: .1em; }
+
+/* ---------- The day board ---------- */
+.day-row { align-items: flex-start; }
+.day-row .todo-main { flex: 1; }
+.now-tag {
+  font-family: var(--font-mono); font-size: 9px; letter-spacing: .18em;
+  color: var(--green); border: 1px solid rgba(72,229,163,.45);
+  padding: 1px 5px; margin-right: 8px; vertical-align: 1px;
+  animation: now-pulse 2.6s ease-in-out infinite;
+}
+@keyframes now-pulse { 50% { box-shadow: 0 0 8px rgba(72,229,163,.35); } }
+.est-chip {
+  font-family: var(--font-mono); font-size: 10px; color: var(--dim);
+  margin-left: 8px; white-space: nowrap;
+}
+.est-chip .hg { width: 9px; height: 11px; vertical-align: -1.5px; margin-right: 3px; }
+.est-chip.dim { opacity: .7; }
+.kind-chip {
+  font-family: var(--font-mono); font-size: 8.5px; letter-spacing: .14em;
+  padding: 1px 4px; margin-left: 8px; vertical-align: 1px;
+  color: var(--dim); border: 1px solid var(--faint);
+}
+.kind-chip.k-uni { color: var(--cyan); border-color: rgba(23,212,254,.35); }
+.kind-chip.k-study { color: #b09aff; border-color: rgba(176,154,255,.35); }
+.kind-chip.k-career { color: var(--amber); border-color: rgba(255,180,84,.35); }
+.kind-chip.k-fitness { color: var(--green); border-color: rgba(72,229,163,.35); }
+.carried-chip {
+  font-family: var(--font-mono); font-size: 9px; letter-spacing: .1em;
+  color: var(--amber); margin-left: 8px; white-space: nowrap;
+}
+.mv-col { display: flex; flex-direction: column; gap: 2px; margin-left: 8px; }
+.mv {
+  background: none; border: 1px solid var(--faint); color: var(--dim);
+  font-size: 8px; line-height: 1; padding: 3px 6px; cursor: pointer;
+}
+.mv:hover { color: var(--cyan); border-color: var(--cyan); }
+.mv:disabled { opacity: .4; }
+.day-divider {
+  display: flex; align-items: center; gap: 10px; margin: 12px 0 4px;
+  font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .3em; color: var(--dim);
+}
+.day-divider::before, .day-divider::after { content: ''; flex: 1; border-top: 1px dashed var(--faint); }
+.day-add { margin-top: 12px; }
+.day-add input {
+  width: 100%; background: none; border: 1px dashed var(--faint);
+  color: var(--cyan-soft); font-family: var(--font-mono); font-size: 12px;
+  padding: 8px 10px;
+}
+.day-add input:focus { border-color: var(--cyan); border-style: solid; outline: none; }
+.day-strip-foot {
+  display: flex; justify-content: space-between; align-items: center;
+  font-family: var(--font-mono); font-size: 10px; color: var(--dim);
+  letter-spacing: .1em; padding-top: 8px;
+}
+.asg-link { padding: 0 5px; margin-right: 6px; font-size: 10px; }
 
 /* ---------- Command palette ---------- */
 .palette {
