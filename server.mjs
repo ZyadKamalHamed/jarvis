@@ -97,6 +97,22 @@ async function readJsonl(file, limit) {
   }
 }
 
+// True when the string carries no banned-list term; the work-mode guard for
+// free text that has to travel partially (system notes, day-board rows).
+function scansClean(s) {
+  return !BANNED.some(t => String(s || '').toLowerCase().includes(t))
+}
+
+// Work-mode visibility for one day-board task. The career flag is the primary
+// filter, but quick-added tasks are Zyad's own free text and arrive unflagged
+// by design (the add endpoint accepts no flags). LESSON 15 Jul: three career
+// tasks typed into the add box walked straight through to the work payload,
+// so every row's visible text must also scan clean. A dirty row vanishes
+// whole; a task title cannot be degraded the way a pipeline note can.
+function workVisibleDaytask(t) {
+  return !t.career && scansClean([t.title, t.detail, t.url, t.draft, t.doc].join(' '))
+}
+
 function stripCareer(payload) {
   // Server-side stealth: no career data may leave the process in work mode.
   const out = { ...payload }
@@ -138,12 +154,11 @@ function stripCareer(payload) {
     // career context in scope and has already leaked employer names into
     // work-visible rows once (15 Jul). A stripped note degrades to the bare
     // status on the HUD, which is honest and safe.
-    const cleans = s => !BANNED.some(t => String(s || '').toLowerCase().includes(t))
     out.system = {
       ...out.system,
       pipelines: (out.system.pipelines || [])
         .filter(p => p.id !== 'career' && !p.career)
-        .map(p => (cleans(p.note) ? p : { ...p, note: '' })),
+        .map(p => (scansClean(p.note) ? p : { ...p, note: '' })),
     }
   }
   if (out.proposals) {
@@ -157,7 +172,7 @@ function stripCareer(payload) {
   if (out.daytasks) {
     out.daytasks = {
       ...out.daytasks,
-      tasks: (out.daytasks.tasks || []).filter(t => !t.career).map(({ career, ...rest }) => rest),
+      tasks: (out.daytasks.tasks || []).filter(workVisibleDaytask).map(({ career, ...rest }) => rest),
     }
   }
   if (out.study) {
@@ -1073,7 +1088,7 @@ const server = http.createServer(async (req, res) => {
       const file = path.join(DATA, 'daytasks.json')
       const day = await readJson(file)
       const hit = day?.date === localDate() ? (day.tasks || []).find(t => t.id === body.id) : null
-      if (!hit || (hit.career && (await currentMode(url)) === 'work')) {
+      if (!hit || ((await currentMode(url)) === 'work' && !workVisibleDaytask(hit))) {
         return json(res, 404, { error: 'unknown task' })
       }
       hit.done = !!body.done
@@ -1093,8 +1108,8 @@ const server = http.createServer(async (req, res) => {
       const file = path.join(DATA, 'daytasks.json')
       const day = await readJson(file)
       const hit = day?.date === localDate() ? (day.tasks || []).find(t => t.id === body.id) : null
-      if (!hit || (hit.career && mode === 'work')) return json(res, 404, { error: 'unknown task' })
-      const r = moveVisible(day, body.id, body.dir, mode === 'work' ? t => !t.career : () => true)
+      if (!hit || (mode === 'work' && !workVisibleDaytask(hit))) return json(res, 404, { error: 'unknown task' })
+      const r = moveVisible(day, body.id, body.dir, mode === 'work' ? workVisibleDaytask : () => true)
       if (!r.ok) return json(res, 400, { error: r.error })
       if (r.changed) {
         await writeJsonAtomic(file, day)
