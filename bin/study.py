@@ -1,17 +1,28 @@
 #!/usr/bin/env python3
-"""JARVIS spaced repetition engine.
+"""JARVIS active recall engine.
 
-Scans the Obsidian vault for notes tagged #review, schedules them with the
-FSRS-5 algorithm (default published weights, no dependencies), and writes the
-daily queue to data/study.json.
+Schedules cards with the FSRS-5 algorithm (default published weights, no
+dependencies) and writes the daily queue to data/study.json. Cards come from
+three sources: the Obsidian vault (any note modified in the last 36 hours is
+captured automatically, and #review remains an explicit opt-in), imported
+decks (Notion exports stored under data/study-cards/), and manual adds.
 
 Usage:
   python3 bin/study.py refresh              rebuild queue from vault + state
   python3 bin/study.py review <id> <1-4>    grade a card (1 again, 2 hard, 3 good, 4 easy)
   python3 bin/study.py list                 show due cards
-Card state lives in data/fsrs-state.json. Australian English. No em dashes.
+  python3 bin/study.py add <id> --title T [--prompt P] [--career] [--start YYYY-MM-DD]
+                        [--est N] [--module M] [--content-file F]
+  python3 bin/study.py import <file.json>   batch upsert a deck (staggered startDate supported)
+  python3 bin/study.py remove <id>          drop a card from the rotation entirely
+
+Card state lives in data/fsrs-state.json. A card with a future startDate is
+scheduled, not due; it enters the rotation on that local date. career: true
+cards are stripped server-side in work mode (binding). Australian English.
+No em dashes.
 """
 
+import argparse
 import json
 import math
 import os
@@ -25,6 +36,11 @@ ROOT = Path(__file__).resolve().parent.parent
 VAULT = Path(os.environ.get("JARVIS_VAULT", str(Path.home() / "Documents" / "Obsidian Vault")))
 STATE_FILE = ROOT / "data" / "fsrs-state.json"
 OUT_FILE = ROOT / "data" / "study.json"
+CARDS_DIR = ROOT / "data" / "study-cards"
+
+FRESH_HOURS = 36  # a note touched within this window is captured automatically
+VAULT_EXCLUDE_DIRS = {"Daily"}  # JARVIS writes the daily log itself; not study material
+VAULT_EXCLUDE_FILES = {"Welcome.md"}
 
 # FSRS-5 default parameters (open-spaced-repetition, MIT licensed constants).
 W = [0.40255, 1.18385, 3.173, 15.69105, 7.1949, 0.5345, 1.4604, 0.0046,
@@ -36,9 +52,17 @@ DESIRED_RETENTION = 0.9
 
 AGAIN, HARD, GOOD, EASY = 1, 2, 3, 4
 
+ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,59}$")
+DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+EM_DASH = "—"
+
 
 def now():
     return datetime.now(timezone.utc)
+
+
+def local_today():
+    return datetime.now().astimezone().date()
 
 
 def retrievability(stability, elapsed_days):
@@ -97,23 +121,58 @@ def atomic_write(path, obj):
     os.replace(tmp, str(path))
 
 
+def card_source(c):
+    return c.get("source") or "vault"
+
+
+def card_path(cid, c):
+    # Legacy vault cards used the vault-relative path as their id.
+    return c.get("path") or (cid if card_source(c) == "vault" else None)
+
+
+def started(c, today):
+    sd = c.get("startDate")
+    return not sd or sd <= today.isoformat()
+
+
+def fallback_prompt(title):
+    return (
+        "From memory: what are the key points of " + title
+        + "? Say them out loud before you open the note."
+    )
+
+
 def scan_vault():
-    """Return {card_id: {title, path, module}} for every note tagged #review."""
+    """Return {rel_path: {title, path, module}} for notes in the rotation.
+
+    A note qualifies when it is tagged #review (explicit opt-in) or its
+    mtime falls within the last FRESH_HOURS (automatic capture of anything
+    newly written or meaningfully edited). JARVIS's own Daily logs and the
+    vault welcome file never qualify.
+    """
     cards = {}
     if not VAULT.exists():
         return cards
+    cutoff = now().timestamp() - FRESH_HOURS * 3600
     for md in VAULT.rglob("*.md"):
-        if any(part.startswith(".") for part in md.parts):
+        parts = md.relative_to(VAULT).parts
+        if any(p.startswith(".") for p in parts):
+            continue
+        if any(p in VAULT_EXCLUDE_DIRS for p in parts[:-1]):
+            continue
+        if parts[-1] in VAULT_EXCLUDE_FILES:
             continue
         try:
+            fresh = md.stat().st_mtime >= cutoff
             text = md.read_text(errors="ignore")
         except OSError:
             continue
-        if not re.search(r"(^|\s)#review\b", text) and '"review"' not in text.split("---")[0]:
+        tagged = re.search(r"(^|\s)#review\b", text) or '"review"' in text.split("---")[0]
+        if not (tagged or fresh):
             continue
         rel = str(md.relative_to(VAULT))
-        module = md.parts[len(VAULT.parts)] if len(md.parts) > len(VAULT.parts) + 1 else "vault"
-        cards[rel] = {"title": md.stem, "path": rel, "module": module.lower()}
+        module = parts[0].lower() if len(parts) > 1 else "vault"
+        cards[rel] = {"title": md.stem, "path": rel, "module": module}
     return cards
 
 
@@ -122,11 +181,14 @@ def refresh():
     vault_cards = scan_vault()
     known = state["cards"]
 
+    captured = 0
     for cid, meta in vault_cards.items():
         if cid not in known:
             known[cid] = {
                 "title": meta["title"],
                 "module": meta["module"],
+                "source": "vault",
+                "path": meta["path"],
                 "added": now().isoformat(),
                 "due": now().isoformat(),
                 "stability": None,
@@ -135,57 +197,98 @@ def refresh():
                 "lapses": 0,
                 "last_review": None,
             }
+            captured += 1
         else:
             known[cid]["title"] = meta["title"]
             known[cid]["module"] = meta["module"]
-    # drop cards whose notes vanished
-    for cid in [c for c in known if c not in vault_cards]:
-        del known[cid]
+    # Drop only vault cards whose note file actually vanished. A card that
+    # simply fell out of the freshness window keeps its schedule; imported
+    # and manual cards are never touched by a vault scan.
+    for cid in list(known):
+        c = known[cid]
+        if card_source(c) != "vault":
+            continue
+        p = card_path(cid, c)
+        if p and not (VAULT / p).exists():
+            del known[cid]
 
     atomic_write(STATE_FILE, state)
     write_queue(state)
-    print(f"vault: {len(vault_cards)} tagged notes, queue written to {OUT_FILE.name}")
+    print(
+        f"vault: {len(vault_cards)} in rotation ({captured} newly captured), "
+        f"{len(known)} cards total, queue written to {OUT_FILE.name}"
+    )
+
+
+def queue_entry(cid, c, t):
+    entry = {
+        "id": cid,
+        "noteId": cid,
+        "title": c["title"],
+        "module": c.get("module", "vault"),
+        "due": c["due"],
+        "stability": c["stability"],
+        "retrievability": None,
+        "prompt": c.get("prompt") or fallback_prompt(c["title"]),
+        "career": bool(c.get("career")),
+        "estMin": int(c.get("estMin") or 2),
+        "source": card_source(c),
+        "hasContent": bool(c.get("contentFile")),
+        "isNew": c["stability"] is None,
+    }
+    p = card_path(cid, c)
+    if p:
+        entry["path"] = p
+    if c["stability"] and c["last_review"]:
+        elapsed = (t - datetime.fromisoformat(c["last_review"])).total_seconds() / 86400
+        entry["retrievability"] = round(retrievability(c["stability"], elapsed), 3)
+    return entry
 
 
 def write_queue(state):
     t = now()
+    today = local_today()
     due, upcoming = [], []
     reviews_today = 0
-    today = t.astimezone().date().isoformat()
+    scheduled_ahead = 0
+    next_intro = None
     for cid, c in state["cards"].items():
-        entry = {
-            "noteId": cid,
-            "title": c["title"],
-            "path": cid,
-            "module": c.get("module", "vault"),
-            "due": c["due"],
-            "stability": c["stability"],
-            "retrievability": None,
-        }
-        if c["stability"] and c["last_review"]:
-            elapsed = (t - datetime.fromisoformat(c["last_review"])).total_seconds() / 86400
-            entry["retrievability"] = round(retrievability(c["stability"], elapsed), 3)
-        if c.get("last_review", "") and str(c["last_review"]).startswith(today):
+        entry = queue_entry(cid, c, t)
+        if c.get("last_review", "") and str(c["last_review"]).startswith(today.isoformat()):
             reviews_today += 1
-        if datetime.fromisoformat(c["due"]) <= t:
+        if not started(c, today):
+            scheduled_ahead += 1
+            sd = c["startDate"]
+            if next_intro is None or sd < next_intro:
+                next_intro = sd
+            entry["due"] = sd + "T00:00:00+10:00"
+            upcoming.append(entry)
+        elif datetime.fromisoformat(c["due"]) <= t:
             due.append(entry)
         else:
             upcoming.append(entry)
     due.sort(key=lambda e: e["due"])
     upcoming.sort(key=lambda e: e["due"])
 
-    streak = compute_streak(state)
+    est_total = sum(e["estMin"] for e in due)
     out = {
         "updatedAt": t.isoformat(),
         "queue": due,
-        "stats": {"reviewsToday": reviews_today, "streak": streak},
+        "stats": {
+            "reviewsToday": reviews_today,
+            "streak": compute_streak(state),
+            "dueCount": len(due),
+            "sessionMin": 0 if not due else min(20, max(5, est_total)),
+            "scheduledAhead": scheduled_ahead,
+            "nextIntro": next_intro,
+        },
         "upcoming": upcoming[:10],
         "source": "fsrs-engine",
     }
     if not state["cards"]:
         out["setupNote"] = (
-            "The vault at " + str(VAULT) + " has no notes tagged #review yet. "
-            "Tag any lecture note or Arabic vocab list with #review and it enters the rotation."
+            "The vault at " + str(VAULT) + " has no captured notes yet. "
+            "Anything you write enters the rotation the next morning; #review tags a note in immediately."
         )
     atomic_write(OUT_FILE, out)
 
@@ -213,6 +316,8 @@ def review(cid, rating):
     c = state["cards"].get(cid)
     if not c:
         sys.exit(f"unknown card: {cid}")
+    if rating not in (AGAIN, HARD, GOOD, EASY):
+        sys.exit("rating must be 1..4")
     t = now()
     if c["stability"] is None:
         s = init_stability(rating)
@@ -236,23 +341,149 @@ def review(cid, rating):
     print(f"{cid}: rating {rating}, next due in {ivl} day(s)")
 
 
+def validate_card_fields(cid, title, prompt, start, est):
+    if not ID_RE.match(cid):
+        sys.exit(f"bad id (lowercase slug, max 60 chars): {cid}")
+    if not title or len(title) > 140:
+        sys.exit(f"title must be 1..140 chars: {cid}")
+    for field in (title, prompt or ""):
+        if EM_DASH in field:
+            sys.exit(f"no em dashes, house rule: {cid}")
+    if start and not DATE_RE.match(start):
+        sys.exit(f"startDate must be YYYY-MM-DD: {cid}")
+    if est is not None and not (1 <= est <= 30):
+        sys.exit(f"estMin must be 1..30: {cid}")
+
+
+def upsert_card(state, cid, *, title, prompt=None, career=False, start=None,
+                est=None, module=None, content_file=None, source="manual"):
+    validate_card_fields(cid, title, prompt, start, est)
+    if content_file and not re.match(r"^[\w.-]+\.md$", content_file):
+        sys.exit(f"contentFile must be a bare .md filename: {cid}")
+    c = state["cards"].get(cid)
+    fresh = c is None
+    if fresh:
+        due = now().isoformat()
+        if start and start > local_today().isoformat():
+            due = start + "T00:00:00+10:00"
+        c = state["cards"][cid] = {
+            "added": now().isoformat(),
+            "due": due,
+            "stability": None,
+            "difficulty": None,
+            "reps": 0,
+            "lapses": 0,
+            "last_review": None,
+        }
+    # Metadata always follows the latest add/import; the schedule (due,
+    # stability) is FSRS's alone once a card exists.
+    c["title"] = title
+    c["module"] = module or c.get("module") or "deck"
+    c["source"] = source
+    c["career"] = bool(career)
+    if prompt:
+        c["prompt"] = prompt
+    if est is not None:
+        c["estMin"] = est
+    if start:
+        c["startDate"] = start
+    if content_file:
+        c["contentFile"] = content_file
+    return fresh
+
+
+def cmd_add(args):
+    state = load_state()
+    fresh = upsert_card(
+        state, args.id, title=args.title, prompt=args.prompt, career=args.career,
+        start=args.start, est=args.est, module=args.module,
+        content_file=args.content_file, source="manual",
+    )
+    atomic_write(STATE_FILE, state)
+    write_queue(state)
+    print(f"{args.id}: {'added' if fresh else 'updated'}")
+
+
+def cmd_import(path_arg):
+    try:
+        cards = json.loads(Path(path_arg).read_text())
+    except (OSError, json.JSONDecodeError) as e:
+        sys.exit(f"cannot read deck: {e}")
+    if not isinstance(cards, list) or not cards:
+        sys.exit("deck must be a non-empty JSON array")
+    state = load_state()
+    added = updated = 0
+    for card in cards:
+        fresh = upsert_card(
+            state, str(card.get("id", "")),
+            title=str(card.get("title", "")),
+            prompt=card.get("prompt"),
+            career=bool(card.get("career")),
+            start=card.get("startDate"),
+            est=int(card["estMin"]) if card.get("estMin") is not None else None,
+            module=card.get("module"),
+            content_file=card.get("contentFile"),
+            source=str(card.get("source") or "notion"),
+        )
+        added += fresh
+        updated += not fresh
+    atomic_write(STATE_FILE, state)
+    write_queue(state)
+    print(f"deck: {added} added, {updated} updated, {len(state['cards'])} cards total")
+
+
+def cmd_remove(cid):
+    state = load_state()
+    if cid not in state["cards"]:
+        sys.exit(f"unknown card: {cid}")
+    del state["cards"][cid]
+    atomic_write(STATE_FILE, state)
+    write_queue(state)
+    print(f"{cid}: removed")
+
+
 def list_due():
     state = load_state()
     t = now()
-    rows = [(cid, c) for cid, c in state["cards"].items() if datetime.fromisoformat(c["due"]) <= t]
+    today = local_today()
+    rows = [
+        (cid, c) for cid, c in state["cards"].items()
+        if started(c, today) and datetime.fromisoformat(c["due"]) <= t
+    ]
     if not rows:
         print("queue clear")
     for cid, c in sorted(rows, key=lambda x: x[1]["due"]):
-        print(f"  [{c.get('module','vault'):8}] {c['title']}  ({cid})")
+        flag = "*" if c.get("career") else " "
+        print(f" {flag}[{c.get('module','vault'):10}] {c['title']}  ({cid})")
+
+
+def main():
+    argv = sys.argv[1:]
+    cmd = argv[0] if argv else "refresh"
+    if cmd == "refresh":
+        refresh()
+    elif cmd == "review" and len(argv) == 3:
+        review(argv[1], int(argv[2]))
+    elif cmd == "list":
+        list_due()
+    elif cmd == "add":
+        p = argparse.ArgumentParser(prog="study.py add")
+        p.add_argument("id")
+        p.add_argument("--title", required=True)
+        p.add_argument("--prompt")
+        p.add_argument("--career", action="store_true")
+        p.add_argument("--start")
+        p.add_argument("--est", type=int)
+        p.add_argument("--module")
+        p.add_argument("--content-file", dest="content_file")
+        cmd_add(p.parse_args(argv[1:]))
+    elif cmd == "import" and len(argv) == 2:
+        cmd_import(argv[1])
+    elif cmd == "remove" and len(argv) == 2:
+        cmd_remove(argv[1])
+    else:
+        sys.exit(__doc__)
 
 
 if __name__ == "__main__":
-    cmd = sys.argv[1] if len(sys.argv) > 1 else "refresh"
-    if cmd == "refresh":
-        refresh()
-    elif cmd == "review" and len(sys.argv) == 4:
-        review(sys.argv[2], int(sys.argv[3]))
-    elif cmd == "list":
-        list_due()
-    else:
-        sys.exit(__doc__)
+    main()

@@ -153,7 +153,7 @@
   </section>
 
   <section class="panel span4" id="panel-study">
-    <header class="panel-head"><h2>Study matrix</h2><span class="chip" id="study-chip"></span></header>
+    <header class="panel-head"><h2>Active recall</h2><span class="chip" id="study-chip"></span></header>
     <div id="study-body"></div>
   </section>
 
@@ -226,6 +226,16 @@
     <div><b>LOG</b> conversation record, &#9654; replays any reply aloud</div>
     <div><b>MIC</b> push to talk, goes quiet to send</div>
     <div><b>&#9654; WALKTHROUGH</b> on an operator task: I guide you step by step</div>
+    <div><b>&#9654; PLAY</b> on Active recall: answer from memory, reveal to check, grade 1 to 4 (Space reveals)</div>
+  </div>
+</div>
+
+<div id="recall" class="convo guide" hidden>
+  <div class="answer-head"><span id="recall-title">ACTIVE RECALL</span><button id="recall-close">×</button></div>
+  <div class="guide-progress" id="recall-progress"></div>
+  <div class="convo-body guide-body" id="recall-body"></div>
+  <div class="guide-foot">
+    <div class="guide-controls" id="recall-controls"></div>
   </div>
 </div>
 

@@ -733,13 +733,23 @@ function renderStudy() {
   const st = DATA.study
   const box = $('#study-body')
   if (!st) { box.innerHTML = '<p class="empty">No study feed.</p>'; return }
-  $('#study-chip').textContent = (st.stats?.streak ?? 0) + 'D STREAK'
+  const s = st.stats || {}
   const due = st.queue || []
+  const chip = $('#study-chip')
+  chip.textContent = due.length
+    ? `${due.length} DUE · ~${s.sessionMin || 5}M`
+    : (s.streak ? s.streak + 'D STREAK' : 'CLEAR')
+  chip.className = 'chip ' + (due.length ? 'warn' : 'ok')
   box.innerHTML = `
-    <div class="bignum"><b>${due.length}</b><span>reviews due today</span></div>
-    ${due.slice(0, 5).map(q => `<div class="list-line"><span class="l">${esc(q.title)}</span><span class="r">${esc(q.module || '')}</span></div>`).join('')}
-    ${due.length === 0 ? '<p class="empty">Queue clear. The vault grows when you feed it notes.</p>' : ''}
+    <div class="bignum"><b>${due.length}</b><span>${due.length === 1 ? 'card' : 'cards'} to recall today${due.length ? ' · about ' + (s.sessionMin || 5) + ' min' : ''}</span></div>
+    ${due.slice(0, 5).map(q => `<div class="list-line"><span class="l">${esc(q.title)}</span><span class="r">${esc(q.module || '')}${q.isNew ? ' · new' : ''}${q.estMin ? ' · ' + q.estMin + 'm' : ''}</span></div>`).join('')}
+    ${due.length > 5 ? `<div class="list-line"><span class="l">+${due.length - 5} more waiting in the queue</span><span class="r"></span></div>` : ''}
+    ${due.length
+      ? `<div class="feed-actions"><button class="act-btn yes" id="recall-play">&#9654; PLAY ${s.sessionMin || 5} MIN SESSION</button></div>`
+      : '<p class="empty">Queue clear. Anything you write today enters the rotation tomorrow.</p>'}
+    ${s.scheduledAhead ? `<div class="setup">${s.scheduledAhead} card${s.scheduledAhead === 1 ? '' : 's'} scheduled ahead${s.nextIntro ? ', next lands ' + esc(s.nextIntro) : ''}.</div>` : ''}
     ${st.setupNote ? `<div class="setup">${esc(st.setupNote)}</div>` : ''}`
+  document.getElementById('recall-play')?.addEventListener('click', startRecall)
 }
 
 function sparkline(series, key) {
@@ -1327,6 +1337,7 @@ function paletteActions() {
     { name: 'Ask JARVIS...', run: () => $('#ask-input').focus() },
     { name: 'Add to today (td:)', run: preset('td: ') },
     { name: 'Day board (focus mode)', run: () => setFocusMode(true) },
+    { name: 'Recall session (play the queue)', run: () => startRecall() },
     { name: 'Capture a thought (in:)', run: preset('in: ') },
     { name: 'File feedback (fb:)', run: preset('fb: ') },
     { name: 'Shortcut help', run: () => showHelp() },
@@ -1545,6 +1556,146 @@ $('#guide-ask').addEventListener('keydown', async e => {
   aEl.textContent = answer
   $('#guide-body').scrollTop = $('#guide-body').scrollHeight
   if (j.ok) speak(answer)
+})
+
+// ---------- active recall session ----------
+// PLAY runs the due queue card by card: recall prompt first (answer from
+// memory), REVEAL to check against the note, grade 1..4 feeds FSRS and
+// reschedules. The card list is cut at stats.sessionMin so the session stays
+// inside the 5 to 20 minute budget; whatever misses the cut stays due.
+
+const recall = { cards: [], idx: 0, revealed: false, done: 0 }
+
+function startRecall() {
+  const st = DATA.study
+  const queue = st?.queue || []
+  if (!queue.length) return
+  const budget = st.stats?.sessionMin || 20
+  const cards = []
+  let acc = 0
+  for (const q of queue) {
+    cards.push(q)
+    acc += q.estMin || 2
+    if (acc >= budget) break
+  }
+  recall.cards = cards
+  recall.idx = 0
+  recall.done = 0
+  $('#recall').hidden = false
+  openRecallCard()
+}
+
+function closeRecall() {
+  $('#recall').hidden = true
+  stopSpeech()
+  fetchData()
+}
+
+function openRecallCard() {
+  const q = recall.cards[recall.idx]
+  recall.revealed = false
+  $('#recall-progress').innerHTML = `<span class="chip">CARD ${recall.idx + 1} / ${recall.cards.length}</span>`
+    + `<span class="chip">${esc((q.module || 'vault').toUpperCase())}</span>`
+    + (q.estMin ? `<span class="chip">~${q.estMin}M</span>` : '')
+  $('#recall-body').innerHTML = `
+    <div class="recall-title">${esc(q.title)}</div>
+    <div class="recall-prompt">${esc(q.prompt || 'From memory: what are the key points? Say them out loud before you check.')}</div>
+    <div class="recall-hint">Answer out loud or on paper, then reveal to check yourself.</div>`
+  $('#recall-controls').innerHTML = `
+    <button class="act-btn yes" id="recall-reveal">REVEAL (SPACE)</button>
+    <button class="act-btn" id="recall-skip" title="Leave it due, no grade">SKIP</button>`
+  document.getElementById('recall-reveal').addEventListener('click', revealRecall)
+  document.getElementById('recall-skip').addEventListener('click', nextRecall)
+  speak(q.prompt || q.title)
+}
+
+async function revealRecall() {
+  if (recall.revealed) return
+  recall.revealed = true
+  const q = recall.cards[recall.idx]
+  let card = null
+  try {
+    const res = await fetch('/api/study-card?id=' + encodeURIComponent(q.id || q.noteId) + (WORK_PARAM ? '&work=1' : ''))
+    if (res.ok) card = await res.json()
+  } catch { /* reveal still works grade-only */ }
+  const obsidian = card?.path
+    ? `<div class="feed-actions"><a class="act-btn" href="obsidian://open?vault=${encodeURIComponent('Obsidian Vault')}&file=${encodeURIComponent(card.path.replace(/\.md$/, ''))}">OPEN NOTE &#8599;</a></div>`
+    : ''
+  const check = card?.content
+    ? `<div class="recall-content">${mdLite(card.content)}</div>` + obsidian
+    : card?.path
+      ? `<div class="recall-hint">The note lives in the vault; open it and read it through.</div>` + obsidian
+      : '<div class="recall-hint">No stored content for this card; grade on how the recall felt.</div>'
+  $('#recall-body').insertAdjacentHTML('beforeend', check)
+  $('#recall-controls').innerHTML = `
+    <button class="act-btn" data-grade="1">AGAIN (1)</button>
+    <button class="act-btn" data-grade="2">HARD (2)</button>
+    <button class="act-btn yes" data-grade="3">GOOD (3)</button>
+    <button class="act-btn" data-grade="4">EASY (4)</button>`
+  for (const b of $('#recall-controls').querySelectorAll('[data-grade]')) {
+    b.addEventListener('click', () => gradeRecall(Number(b.dataset.grade)))
+  }
+}
+
+async function gradeRecall(rating) {
+  const q = recall.cards[recall.idx]
+  const buttons = $('#recall-controls').querySelectorAll('button')
+  for (const b of buttons) b.disabled = true
+  try {
+    const res = await fetch('/api/study-review' + (WORK_PARAM ? '?work=1' : ''), {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ id: q.id || q.noteId, rating }),
+    })
+    if (!res.ok) throw new Error('review ' + res.status)
+    recall.done += 1
+  } catch {
+    for (const b of buttons) b.disabled = false // grade did not land; let him retry
+    return
+  }
+  nextRecall()
+}
+
+function nextRecall() {
+  if (recall.idx + 1 >= recall.cards.length) { finishRecall(); return }
+  recall.idx += 1
+  openRecallCard()
+}
+
+function finishRecall() {
+  $('#recall-progress').innerHTML = '<span class="chip ok">DONE</span>'
+  $('#recall-body').innerHTML = `<div class="guide-complete">${recall.done
+    ? `Session complete: ${recall.done} ${recall.done === 1 ? 'card' : 'cards'} graded. The algorithm has rescheduled them.`
+    : 'Session closed. Nothing graded, everything stays due.'}</div>`
+  $('#recall-controls').innerHTML = '<button class="act-btn yes" id="recall-finish">CLOSE</button>'
+  document.getElementById('recall-finish').addEventListener('click', closeRecall)
+  if (recall.done) speak(`Session complete, sir. ${recall.done} down.`)
+  fetchData()
+}
+
+// Tiny renderer for stored card content: fenced code becomes <pre>, heading
+// lines go bold, everything else stays escaped plain lines.
+function mdLite(md) {
+  return md.split('```').map((part, i) => {
+    if (i % 2) return `<pre class="recall-code">${esc(part.replace(/^\w*\n/, ''))}</pre>`
+    return esc(part).split('\n').map(l => {
+      const h = l.match(/^#+\s*(.*)$/)
+      if (h) return `<div class="recall-h">${h[1]}</div>`
+      return l.trim() ? `<div>${l}</div>` : '<div class="recall-gap"></div>'
+    }).join('')
+  }).join('')
+}
+
+$('#recall-close').addEventListener('click', closeRecall)
+addEventListener('keydown', e => {
+  if ($('#recall').hidden) return
+  if (/INPUT|TEXTAREA/.test(document.activeElement?.tagName || '')) return
+  if (e.key === 'Escape') { closeRecall(); return }
+  if ((e.key === ' ' || e.key === 'Enter') && !recall.revealed) {
+    e.preventDefault()
+    document.getElementById('recall-reveal')?.click()
+  } else if (recall.revealed && ['1', '2', '3', '4'].includes(e.key)) {
+    $('#recall-controls').querySelector(`[data-grade="${e.key}"]`)?.click()
+  }
 })
 
 // ---------- focus mode + pomodoro ----------

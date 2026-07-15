@@ -301,6 +301,96 @@ async function main() {
       else fs.writeFileSync(dayFile, dayBefore)
     }
 
+    // Active recall is a stealth surface the same way the day board is:
+    // career cards (DSA and interview decks) are filtered from the work-mode
+    // study payload with their flag keys shed and the session stats
+    // recomputed, and both card endpoints answer 404 for a career id in work
+    // mode, identical to an unknown id. Probe with synthetic state (career
+    // card title deliberately holds a banned word) and restore both files
+    // byte-identically afterwards.
+    const stateFile = path.join(ROOT, 'data', 'fsrs-state.json')
+    const studyFile = path.join(ROOT, 'data', 'study.json')
+    const stateBefore = fs.existsSync(stateFile) ? fs.readFileSync(stateFile) : null
+    const studyBefore = fs.existsSync(studyFile) ? fs.readFileSync(studyFile) : null
+    const past = new Date(Date.now() - 3600e3).toISOString()
+    const probeCard = (career, title) => ({
+      title, module: career ? 'deck' : 'vault', source: 'manual', career,
+      prompt: 'Selfcheck probe prompt for ' + title, estMin: 3,
+      added: past, due: past, stability: null, difficulty: null,
+      reps: 0, lapses: 0, last_review: null,
+    })
+    fs.writeFileSync(stateFile, JSON.stringify({
+      cards: {
+        'selfcheck-recall-plain': probeCard(false, 'Selfcheck plain card'),
+        'selfcheck-recall-career': probeCard(true, 'Selfcheck interview card'),
+      },
+    }))
+    const probeQueueEntry = (id, career, title) => ({
+      id, noteId: id, title, module: career ? 'deck' : 'vault', due: past,
+      stability: null, retrievability: null, prompt: 'Selfcheck probe prompt for ' + title,
+      career, estMin: 3, source: 'manual', hasContent: false, isNew: true,
+    })
+    fs.writeFileSync(studyFile, JSON.stringify({
+      updatedAt: past,
+      queue: [
+        probeQueueEntry('selfcheck-recall-plain', false, 'Selfcheck plain card'),
+        probeQueueEntry('selfcheck-recall-career', true, 'Selfcheck interview card'),
+      ],
+      stats: { reviewsToday: 0, streak: 0, dueCount: 2, sessionMin: 6, scheduledAhead: 0, nextIntro: null },
+      upcoming: [probeQueueEntry('selfcheck-recall-career', true, 'Selfcheck interview card')],
+      source: 'fsrs-engine',
+    }))
+    try {
+      const stFull = await (await fetch(BASE + '/api/data')).json()
+      if ((stFull.study?.queue || []).length !== 2) fail('full mode does not serve the whole recall queue')
+      const stWork = await (await fetch(BASE + '/api/data?work=1')).json()
+      const workQueue = stWork.study?.queue || []
+      if (workQueue.length !== 1) fail('work-mode recall queue did not filter the career card (' + workQueue.length + ' served)')
+      if (workQueue.some(e => 'career' in e)) fail('work-mode recall queue carries the career flag key')
+      if ((stWork.study?.upcoming || []).length !== 0) fail('work-mode recall upcoming did not filter the career card')
+      if (stWork.study?.stats?.dueCount !== 1) fail('work-mode recall dueCount not recomputed (' + stWork.study?.stats?.dueCount + ')')
+      if (stWork.study?.stats?.sessionMin !== 5) fail('work-mode recall sessionMin not recomputed (' + stWork.study?.stats?.sessionMin + ')')
+      const stBlob = JSON.stringify(stWork.study).toLowerCase()
+      for (const term of BANNED) {
+        if (stBlob.includes(term)) fail(`work-mode study payload leaks banned term: "${term}"`)
+      }
+      const cardWork = await fetch(BASE + '/api/study-card?work=1&id=selfcheck-recall-career')
+      if (cardWork.status !== 404) fail('career recall card visible in work mode (got ' + cardWork.status + ')')
+      const cardFull = await fetch(BASE + '/api/study-card?id=selfcheck-recall-career')
+      if (cardFull.status !== 200) fail('career recall card not served in full mode (got ' + cardFull.status + ')')
+      if ('career' in (await cardFull.json())) fail('/api/study-card serves the career flag key')
+      for (const q of ['', '?work=1']) {
+        const r = await fetch(BASE + '/api/study-card' + (q ? q + '&' : '?') + 'id=selfcheck-no-such-card')
+        if (r.status !== 404) fail('/api/study-card unknown id not 404 in ' + (q ? 'work' : 'full') + ' mode (got ' + r.status + ')')
+      }
+      const travCard = await fetch(BASE + '/api/study-card?id=..%2F..%2F.env')
+      if (travCard.status !== 400) fail('/api/study-card traversal id not rejected (got ' + travCard.status + ')')
+      const revWork = await fetch(BASE + '/api/study-review?work=1', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ id: 'selfcheck-recall-career', rating: 3 }),
+      })
+      if (revWork.status !== 404) fail('career recall card gradable in work mode (got ' + revWork.status + ')')
+      const revUnknown = await fetch(BASE + '/api/study-review', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ id: 'selfcheck-no-such-card', rating: 3 }),
+      })
+      if (revUnknown.status !== 404) fail('/api/study-review unknown id not 404 (got ' + revUnknown.status + ')')
+      const revBad = await fetch(BASE + '/api/study-review', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ id: 'selfcheck-recall-plain', rating: 9 }),
+      })
+      if (revBad.status !== 400) fail('/api/study-review accepted a bad rating (got ' + revBad.status + ')')
+      note('active recall: career card invisible at work, stats recomputed, endpoints 404-match, ratings validated')
+    } finally {
+      if (stateBefore === null) fs.unlinkSync(stateFile)
+      else fs.writeFileSync(stateFile, stateBefore)
+      if (studyBefore === null) fs.unlinkSync(studyFile)
+      else fs.writeFileSync(studyFile, studyBefore)
+    }
+
     // /api/guide mirrors the dismiss contract: career guides answer 404 in
     // work mode, identical to a missing guide, so the endpoint cannot confirm
     // one exists. Malformed ids die before touching the filesystem.

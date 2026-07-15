@@ -160,6 +160,24 @@ function stripCareer(payload) {
       tasks: (out.daytasks.tasks || []).filter(t => !t.career).map(({ career, ...rest }) => rest),
     }
   }
+  if (out.study) {
+    // Recall cards carry the same binding flag as day-board tasks (DSA and
+    // interview decks are career material). Survivors shed the flag key and
+    // the counts are recomputed so the chip stays honest at the office.
+    const shed = arr => (arr || []).filter(e => !e.career).map(({ career, ...rest }) => rest)
+    const queue = shed(out.study.queue)
+    const est = queue.reduce((a, e) => a + (e.estMin || 2), 0)
+    out.study = {
+      ...out.study,
+      queue,
+      upcoming: shed(out.study.upcoming),
+      stats: {
+        ...(out.study.stats || {}),
+        dueCount: queue.length,
+        sessionMin: queue.length ? Math.min(20, Math.max(5, est)) : 0,
+      },
+    }
+  }
   if (out.agents) {
     // agentsRoster already filters by mode; this repeats it at the chokepoint
     // so a future unmoded call cannot leak the deck.
@@ -476,6 +494,16 @@ function trimmedSnapshot(payload) {
     careerStats: payload.career?.stats || null,
     assignments: (payload.uni?.assignments || []).filter(a => a.status !== 'done').map(a => ({ title: a.title, due: a.due, progressPct: a.progressPct })),
     reviewsDue: payload.study?.queue?.length ?? null,
+    // Today's recall load rides along so voice can name the topics and cue
+    // the session. Built from the mode-filtered payload, so work mode
+    // inherits the career strip automatically.
+    recall: payload.study
+      ? {
+          due: (payload.study.queue || []).slice(0, 6).map(q => ({ id: q.id || q.noteId, title: q.title, estMin: q.estMin ?? null })),
+          sessionMin: payload.study.stats?.sessionMin ?? 0,
+          scheduledAhead: payload.study.stats?.scheduledAhead ?? 0,
+        }
+      : null,
     proposalsPending: (payload.proposals || []).filter(p => !p.status).map(p => p.title),
     weather: payload.weather ? { nowC: payload.weather.current?.tempC, today: payload.weather.today } : null,
     // The open day board rides along (ids included) so plan questions and
@@ -493,6 +521,7 @@ function trimmedSnapshot(payload) {
 }
 
 let askChain = Promise.resolve()
+let reviewChain = Promise.resolve()
 
 // onDelta, when given, switches claude to stream-json and receives text
 // fragments as they are generated; the returned promise still resolves to
@@ -1107,6 +1136,63 @@ const server = http.createServer(async (req, res) => {
       await writeJsonAtomic(file, day)
       notifyClients()
       return json(res, 200, { ok: true, id: task.id })
+    }
+    if (url.pathname === '/api/study-card' && req.method === 'GET') {
+      // One recall card: the prompt plus whatever the reveal should show.
+      // Career cards answer 404 in work mode, identical to a bad id (same
+      // reasoning as /api/guide). Ids may be legacy vault paths, so the
+      // check is containment, not a slug pattern.
+      const id = String(url.searchParams.get('id') || '')
+      if (!id || id.length > 200 || id.includes('..') || id.startsWith('/')) {
+        return json(res, 400, { error: 'bad card id' })
+      }
+      const state = await readJson(path.join(DATA, 'fsrs-state.json'))
+      const c = state?.cards?.[id]
+      if (!c || (c.career && (await currentMode(url)) === 'work')) {
+        return json(res, 404, { error: 'unknown card' })
+      }
+      let content = null
+      if (c.contentFile && /^[\w.-]+\.md$/.test(c.contentFile)) {
+        try {
+          content = await fsp.readFile(path.join(DATA, 'study-cards', c.contentFile), 'utf8')
+        } catch { /* content file gone; the card still works as a bare prompt */ }
+      }
+      return json(res, 200, {
+        id,
+        title: c.title,
+        module: c.module || 'vault',
+        prompt: c.prompt || 'From memory: what are the key points of ' + c.title + '? Say them out loud before you open the note.',
+        path: c.path || ((c.source || 'vault') === 'vault' ? id : null),
+        content,
+      })
+    }
+    if (url.pathname === '/api/study-review' && req.method === 'POST') {
+      // Grade a recall card 1..4. The FSRS maths lives in bin/study.py alone;
+      // grades are serialised through a chain so two clicks cannot race the
+      // state file. Career ids answer 404 in work mode, identical to bad ids.
+      const body = await readBody(req)
+      const id = String(body.id || '')
+      const rating = Number(body.rating)
+      if (!Number.isInteger(rating) || rating < 1 || rating > 4) {
+        return json(res, 400, { error: 'rating must be 1..4' })
+      }
+      const state = await readJson(path.join(DATA, 'fsrs-state.json'))
+      const c = state?.cards?.[id]
+      if (!c || (c.career && (await currentMode(url)) === 'work')) {
+        return json(res, 404, { error: 'unknown card' })
+      }
+      const graded = await new Promise(resolve => {
+        reviewChain = reviewChain.then(() => new Promise(done => {
+          const child = spawn('python3', [path.join(ROOT, 'bin', 'study.py'), 'review', id, String(rating)], {
+            cwd: ROOT, stdio: 'ignore',
+          })
+          child.on('exit', code => { resolve(code === 0); done() })
+          child.on('error', () => { resolve(false); done() })
+        }))
+      })
+      if (!graded) return json(res, 500, { error: 'grading failed' })
+      notifyClients()
+      return json(res, 200, { ok: true })
     }
     if (url.pathname === '/api/uni-done' && req.method === 'POST') {
       // Tick an assignment off the University board. done:true remembers the
