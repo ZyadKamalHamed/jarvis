@@ -722,6 +722,18 @@ function askClaude(question, mode, onDelta) {
   return askChain
 }
 
+// Known ask-failure classes mapped to actionable HUD copy. Telemetry keeps
+// the raw error (recordFeedback runs before this); only the text the client
+// sees changes. All four classes were observed live on 15 Jul 2026.
+function friendlyAskError(raw) {
+  const s = String(raw || '')
+  if (/oauth|authenticat/i.test(s)) return 'The reasoning core has been signed out, sir. Run claude in a Terminal on the server and log in, then ask again.'
+  if (/(session|usage) limit/i.test(s)) return s + (/[.!?]$/.test(s) ? '' : '.') + ' Asks resume when the limit resets.'
+  if (/spawn claude ENOENT/.test(s)) return 'The claude command is not on the server\'s PATH, so asks cannot start. Restart the server from a shell where claude runs.'
+  if (/exit 143|SIGTERM/i.test(s)) return 'That ask ran past the five minute limit and was stopped, sir. A smaller question should get through.'
+  return s
+}
+
 // ---------- TTS ----------
 
 async function ttsElevenLabs(text) {
@@ -1049,6 +1061,7 @@ const server = http.createServer(async (req, res) => {
             type: 'ask-failure',
             text: `ask failed: ${result.error}`.slice(0, 500),
           }).catch(() => {})
+          result.error = friendlyAskError(result.error)
         }
         send('done', result)
         return res.end()
@@ -1060,6 +1073,7 @@ const server = http.createServer(async (req, res) => {
           type: 'ask-failure',
           text: `ask failed: ${result.error}`.slice(0, 500),
         }).catch(() => {})
+        result.error = friendlyAskError(result.error)
       }
       return json(res, result.ok ? 200 : 502, result)
     }
