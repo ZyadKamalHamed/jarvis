@@ -846,8 +846,10 @@ function pulseCoreFrom(el) {
 // 'say' is free on this Mac; the server falls back to say if the key is absent.
 function voiceEngine() { return localStorage.getItem('jarvis-voice-engine') === 'say' ? 'say' : 'el' }
 
+// Resolves true only when the line played to its natural end; false when it
+// was skipped, silenced or interrupted. The voice loop keys off that.
 async function speak(text, force = false) {
-  if (!text || (!soundOn && !force)) return
+  if (!text || (!soundOn && !force)) return false
   stopSpeech()
   try {
     const res = await fetch('/api/tts', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text, engine: voiceEngine() }) })
@@ -861,8 +863,14 @@ async function speak(text, force = false) {
     el.addEventListener('ended', () => { if (currentSpeech === el) currentSpeech = null })
     pulseCoreFrom(el)
     await el.play()
+    return await new Promise(resolve => {
+      el.addEventListener('ended', () => resolve(true))
+      el.addEventListener('pause', () => resolve(false)) // stopSpeech() interrupted it
+      el.addEventListener('error', () => resolve(false))
+    })
   } catch (e) {
     console.warn('speak failed', e)
+    return false
   }
 }
 
@@ -1043,7 +1051,11 @@ async function askApi(question, onDelta) {
   return { j, streamedText }
 }
 
-async function ask(question) {
+// Assigned by the mic block below when speech recognition exists. Re-arms
+// dictation hands-free after a spoken reply so a follow-up needs no keypress.
+let armDictation = null
+
+async function ask(question, viaVoice = false) {
   const panel = $('#answer'), body = $('#answer-body')
   panel.hidden = false
   body.innerHTML = 'Processing<span class="cursor"></span>'
@@ -1060,7 +1072,13 @@ async function ask(question) {
     body.innerHTML = ''
     await typewrite(body, answer, 6)
   }
-  if ($('#speak-answers').checked && j.ok) speak(answer)
+  if ($('#speak-answers').checked && j.ok) {
+    const heard = await speak(answer)
+    // Voice in, voice out, reply heard in full: open the mic for the
+    // follow-up. Anything short of that (typed question, silenced or
+    // interrupted reply) leaves the mic alone.
+    if (viaVoice && heard && armDictation) armDictation()
+  }
 }
 
 async function sendWin(text) {
@@ -1142,14 +1160,17 @@ if (SR) {
   let live = false
   let finalText = ''
   let silenceTimer = null
+  let idleTimer = null
   const SILENCE_MS = 2200
+  const HANDSFREE_IDLE_MS = 9000
 
   function submitDictation() {
     const text = ($('#ask-input').value || finalText).trim()
+    const spoken = live // questions sent from a live mic came in by voice
     stopDictation()
     if (text) {
       $('#ask-input').value = text
-      ask(text)
+      ask(text, spoken)
       $('#ask-input').value = ''
     }
   }
@@ -1157,18 +1178,31 @@ if (SR) {
   function stopDictation() {
     live = false
     clearTimeout(silenceTimer)
+    clearTimeout(idleTimer)
     $('#mic').classList.remove('live')
     try { rec.stop() } catch { /* already stopped */ }
   }
 
-  $('#mic').addEventListener('click', () => {
-    if (live) { submitDictation(); return }
+  function startDictation(handsFree = false) {
+    if (live) return
     live = true
     finalText = ''
     $('#ask-input').value = ''
-    $('#ask-input').placeholder = 'Listening, sir...'
+    $('#ask-input').placeholder = handsFree ? 'Listening for a follow-up, sir...' : 'Listening, sir...'
     $('#mic').classList.add('live')
+    clearTimeout(idleTimer)
+    // A hands-free mic that hears nothing closes itself; it never stays hot.
+    if (handsFree) idleTimer = setTimeout(() => {
+      if (live && !$('#ask-input').value.trim()) stopDictation()
+    }, HANDSFREE_IDLE_MS)
     try { rec.start() } catch { /* start() while pending throws; ignore */ }
+  }
+
+  armDictation = () => startDictation(true)
+
+  $('#mic').addEventListener('click', () => {
+    if (live) { submitDictation(); return }
+    startDictation()
   })
 
   rec.onresult = e => {
@@ -1181,6 +1215,7 @@ if (SR) {
     }
     $('#ask-input').value = (finalText + interim).trim()
     clearTimeout(silenceTimer)
+    clearTimeout(idleTimer)
     if ((finalText + interim).trim()) silenceTimer = setTimeout(submitDictation, SILENCE_MS)
   }
 
