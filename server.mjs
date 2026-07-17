@@ -182,6 +182,18 @@ function stripCareer(payload) {
     // survivors are by definition not career items, so drop the field too.
     out.proposals = out.proposals.filter(p => !p.career).map(({ career, ...rest }) => rest)
   }
+  if (out.evolution) {
+    // Only the summary is contractually work-safe. The detail is agent
+    // free text composed with career context in scope, and the evolve run
+    // writes it AFTER its own selfcheck gate, so the server cannot trust
+    // it. LESSON 17 Jul: the 16 Jul detail carried a banned term into the
+    // overnight work payload. Detail never travels; a summary that scans
+    // dirty degrades to a stock line rather than leaking.
+    const { detail, ...rest } = out.evolution
+    out.evolution = scansClean(rest.summary)
+      ? rest
+      : { ...rest, summary: 'One improvement landed overnight.' }
+  }
   if (out.todos) {
     out.todos = out.todos.filter(t => !t.career).map(({ career, ...rest }) => rest)
   }
