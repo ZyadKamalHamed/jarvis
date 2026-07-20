@@ -30,6 +30,13 @@ mkdir -p "$LOGDIR"
 
 stamp() { date '+%Y-%m-%d %H:%M:%S'; }
 
+# Only the wrapper that wrote the pid may remove the lock; a lock that was
+# broken as stale and retaken by a newer run must survive the old wrapper's
+# exit.
+release_lock() {
+  [ "$(cat "$1/pid" 2>/dev/null)" = "$$" ] && rm -rf "$1"
+}
+
 # Anthropic's API is the one dependency every job has; wait for it rather
 # than failing into the void when the job fires seconds after a wake.
 wait_for_network() {
@@ -59,22 +66,36 @@ run_job() {
   LOCK="$LOGDIR/.lock-$NAME"
 
   # One instance per job: the scheduled firing and a catchup sweep must not
-  # run the same job twice. A lock older than 75 minutes is a crashed run.
+  # run the same job twice. The lock records its owner's pid. A lock whose
+  # owner is gone is a crashed or rebooted run and is broken on sight (19 Jul
+  # lesson: a run wedged through a day of sleep held its lock for 14 hours).
+  # A lock with a live owner is never broken, however old the directory is;
+  # the watchdog owns killing slow runs, and age alone cannot tell a hung
+  # run from one legitimately resumed after a long sleep.
   if ! mkdir "$LOCK" 2>/dev/null; then
-    if [ -n "$(find "$LOCK" -maxdepth 0 -mmin +75 2>/dev/null)" ]; then
-      rmdir "$LOCK" 2>/dev/null
-      mkdir "$LOCK" 2>/dev/null || { echo "=== $NAME skipped $(stamp): lock contention" >> "$LOG"; return 0; }
-    else
-      echo "=== $NAME skipped $(stamp): another instance is running" >> "$LOG"
+    local OWNER
+    OWNER="$(cat "$LOCK/pid" 2>/dev/null)"
+    if [ -n "$OWNER" ] && ps -p "$OWNER" -o command= 2>/dev/null | grep -q "run-job.sh"; then
+      echo "=== $NAME skipped $(stamp): another instance is running (pid $OWNER)" >> "$LOG"
       return 0
     fi
+    if [ -z "$OWNER" ] && [ -z "$(find "$LOCK" -maxdepth 0 -mmin +75 2>/dev/null)" ]; then
+      # Ownerless and under 75 minutes old: a pre-pid-format run still in
+      # flight, or another wrapper between its mkdir and its pid write.
+      echo "=== $NAME skipped $(stamp): lock held without owner record" >> "$LOG"
+      return 0
+    fi
+    echo "=== $NAME broke stale lock $(stamp): owner '${OWNER:-none}' no longer running" >> "$LOG"
+    rm -rf "$LOCK"
+    mkdir "$LOCK" 2>/dev/null || { echo "=== $NAME skipped $(stamp): lock contention" >> "$LOG"; return 0; }
   fi
-  trap 'rmdir "'"$LOCK"'" 2>/dev/null' EXIT
+  echo "$$" > "$LOCK/pid"
+  trap 'release_lock "'"$LOCK"'"' EXIT
 
   echo "=== $NAME start $(stamp)" >> "$LOG"
   if ! wait_for_network 600; then
     echo "=== $NAME aborted $(stamp): no network after 10 minutes; the catchup agent will retry" >> "$LOG"
-    rmdir "$LOCK" 2>/dev/null
+    release_lock "$LOCK"
     trap - EXIT
     return 75
   fi
@@ -97,7 +118,7 @@ run_job() {
   local CODE=$?
   echo "" >> "$LOG"
   echo "=== $NAME exit=$CODE $(stamp)" >> "$LOG"
-  rmdir "$LOCK" 2>/dev/null
+  release_lock "$LOCK"
   trap - EXIT
   return "$CODE"
 }
