@@ -39,7 +39,7 @@ OUT_FILE = ROOT / "data" / "study.json"
 CARDS_DIR = ROOT / "data" / "study-cards"
 
 FRESH_HOURS = 36  # a note touched within this window is captured automatically
-VAULT_EXCLUDE_DIRS = {"Daily"}  # JARVIS writes the daily log itself; not study material
+VAULT_EXCLUDE_DIRS = {"Daily", "_templates"}  # daily logs and note templates are not study material
 VAULT_EXCLUDE_FILES = {"Welcome.md"}
 
 # FSRS-5 default parameters (open-spaced-repetition, MIT licensed constants).
