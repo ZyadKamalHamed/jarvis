@@ -12,4 +12,7 @@ export const BANNED = [
   // 15 Jul lesson: agent run-notes named application targets on
   // work-visible surfaces; the employers he applies to are banned words too.
   'westpac', 'siemens',
+  // 21 Jul sweep: targets that entered notes and board tasks since then.
+  // 'culture amp' both spaced and joined so neither spelling slips through.
+  'austrade', 'alinta', 'rabobank', 'culture amp', 'cultureamp',
 ]
