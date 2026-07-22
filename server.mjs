@@ -1464,7 +1464,9 @@ const server = http.createServer(async (req, res) => {
       // run-job.sh makes double-firing impossible.
       if ((await currentMode(url)) === 'work') return json(res, 403, { error: 'unavailable in work mode' })
       if (fs.existsSync(DAILY_LOCK)) return json(res, 409, { error: 'a briefing run is already in flight' })
-      const child = spawn('bash', [path.join(ROOT, 'bin', 'run-job.sh'), path.join(ROOT, 'jobs', 'jarvis-daily-run.md')], {
+      // --force skips the wrapper's served-day stand-down: pressing the button
+      // after a briefing exists is a deliberate re-run, not a duplicate fire.
+      const child = spawn('bash', [path.join(ROOT, 'bin', 'run-job.sh'), '--force', path.join(ROOT, 'jobs', 'jarvis-daily-run.md')], {
         cwd: ROOT,
         detached: true,
         stdio: 'ignore',

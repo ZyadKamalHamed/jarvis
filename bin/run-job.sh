@@ -4,7 +4,15 @@
 # works by hand: bash bin/run-job.sh jobs/jarvis-daily-run.md
 #
 # Modes:
-#   run-job.sh <job.md>    run one job (lock-guarded, waits for network)
+#   run-job.sh <job.md>    run one job (lock-guarded, waits for network). The
+#                          daily job stands down when data/briefing.json
+#                          already carries today's date, mirroring the catchup
+#                          sweep's check, so a manual morning kick is never
+#                          duplicated by the scheduled 7:30 fire (a full agent
+#                          run was spent rediscovering a served day on 17, 18
+#                          and 22 Jul).
+#   run-job.sh --force <job.md>  skip the served-day check for a deliberate
+#                          re-run (the HUD's run-briefing button uses this)
 #   run-job.sh --catchup   run whatever today still owes: the daily job if no
 #                          briefing has been generated today and it is past
 #                          7:30, the evolve job if it has not run and it is
@@ -65,6 +73,20 @@ run_job() {
   LOG="$LOGDIR/$NAME-$(date +%Y-%m-%d).log"
   LOCK="$LOGDIR/.lock-$NAME"
 
+  # Stand down when today has already been served: the catchup sweep checks
+  # this before calling run_job, but the scheduled 7:30 fire never did, so a
+  # manual early kick was followed by a second full agent run that only
+  # rediscovered a finished morning. --force is the deliberate re-run path.
+  if [ "$NAME" = "jarvis-daily-run" ] && [ "$FORCE" != "1" ]; then
+    local BRIEFED_AT BRIEFED_DAY
+    BRIEFED_AT="$(node -e "try{console.log(require('$ROOT/data/briefing.json').generatedAt||'')}catch{}" 2>/dev/null)"
+    BRIEFED_DAY="$(sydney_date_of "${BRIEFED_AT:-invalid}")"
+    if [ -n "$BRIEFED_DAY" ] && [ "$BRIEFED_DAY" = "$(date +%Y-%m-%d)" ]; then
+      echo "=== $NAME stood down $(stamp): today's briefing already exists (generated $BRIEFED_AT); use --force to re-run" >> "$LOG"
+      return 0
+    fi
+  fi
+
   # One instance per job: the scheduled firing and a catchup sweep must not
   # run the same job twice. The lock records its owner's pid. A lock whose
   # owner is gone is a crashed or rebooted run and is broken on sight (19 Jul
@@ -124,6 +146,11 @@ run_job() {
 }
 
 MODE="${1:-}"
+FORCE=0
+if [ "$MODE" = "--force" ]; then
+  FORCE=1
+  MODE="${2:-}"
+fi
 
 if [ "$MODE" = "--selftest" ]; then
   LOG="$LOGDIR/selftest.log"
