@@ -15,4 +15,8 @@ export const BANNED = [
   // 21 Jul sweep: targets that entered notes and board tasks since then.
   // 'culture amp' both spaced and joined so neither spelling slips through.
   'austrade', 'alinta', 'rabobank', 'culture amp', 'cultureamp',
+  // 24 Jul mail sweep: two new targets entered the pipeline. A bare 'iag'
+  // would false-positive inside triage and diag, so the compound forms and
+  // the domain are listed instead; 'hoban' has no such collisions.
+  'iag graduate', 'iag-graduate', 'iag screening', 'iag.com', 'hoban',
 ]
