@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 // Writes today's and tomorrow's calendar events to data/calendar.json using
-// EventKit through bin/CalendarHelper.app (JXA applet, auto-built from
-// bin/calendar-helper.jxa on first run). No Calendar.app launch, no deps.
+// EventKit through bin/CalendarHelper.app (compiled Swift helper, auto-built
+// from bin/calendar-helper.swift on first run). No Calendar.app launch, no deps.
 //
-// Why the applet: on macOS 26 an EventKit request from osascript is
+// Why the helper app: on macOS 26 an EventKit request from osascript is
 // attributed to Terminal, which declares no calendar usage description, so
-// TCC auto-denies WITHOUT showing a prompt. The applet carries its own
+// TCC auto-denies WITHOUT showing a prompt. The helper carries its own
 // NSCalendarsFullAccessUsageDescription, so the first run prompts properly
 // ("CalendarHelper would like full access..."). A denial is still recorded
 // honestly as a setup state, never fabricated around.
@@ -42,14 +42,16 @@ if (!fs.existsSync(APPLET) || process.argv.includes('--rebuild')) {
       source: 'eventkit',
       status: 'error',
       events: [],
-      setupNote: 'CalendarHelper.app failed to build (osacompile). Run: bash bin/build-calendar-helper.sh to see why.',
+      setupNote: 'CalendarHelper.app failed to build (swiftc). Run: bash bin/build-calendar-helper.sh to see why.',
       detail: String(e?.message || '').slice(0, 300),
     })
     process.exit(1)
   }
 }
 
-execFile(APPLET, [], { timeout: 75000 }, (err, stdout, stderr) => {
+// Timeout must outlast the helper's 120s first-grant prompt window, so the
+// wrapper never kills it while a human is still reading the Allow dialog.
+execFile(APPLET, [], { timeout: 130000 }, (err, stdout, stderr) => {
   let result = null
   try { result = JSON.parse(String(stdout).trim()) } catch { /* fall through to error doc */ }
   const now = new Date().toISOString()
