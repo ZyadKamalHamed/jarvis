@@ -19,4 +19,7 @@ export const BANNED = [
   // would false-positive inside triage and diag, so the compound forms and
   // the domain are listed instead; 'hoban' has no such collisions.
   'iag graduate', 'iag-graduate', 'iag screening', 'iag.com', 'hoban',
+  // 27 Jul mail sweep: new targets in the pipeline. 'compass' and 'clipboard'
+  // are too common bare, so the employer name is listed as its compound form.
+  'sportsbet', 'stanwell', 'compass education',
 ]
