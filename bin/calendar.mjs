@@ -23,6 +23,19 @@ const SETUP_NOTE = 'Calendar access not granted yet. Run: node bin/calendar.mjs 
   + '"Allow Full Access" on the CalendarHelper prompt. No prompt? System Settings > Privacy & Security > '
   + 'Calendars > CalendarHelper > Full Access, then run it again.'
 
+// The last good read, if it is recent enough to still describe today and
+// tomorrow. Twelve hours keeps a real revocation from hiding behind stale data.
+function readExistingOk() {
+  try {
+    const doc = JSON.parse(fs.readFileSync(OUT, 'utf8'))
+    if (doc.status !== 'ok' || !Array.isArray(doc.events)) return null
+    if (Date.now() - new Date(doc.updatedAt).getTime() > 12 * 3600000) return null
+    return doc
+  } catch {
+    return null
+  }
+}
+
 function writeDoc(doc) {
   fs.mkdirSync(path.dirname(OUT), { recursive: true })
   const tmp = OUT + '.tmp-' + process.pid
@@ -57,6 +70,17 @@ execFile(APPLET, [], { timeout: 130000 }, (err, stdout, stderr) => {
   const now = new Date().toISOString()
   let doc
   if (err || !result || result.error) {
+    // A denial here does not mean the grant is gone. TCC attributes the helper
+    // to whichever process tree spawned it, so the long-running server reads
+    // fine while a scheduled job or an agent shell is denied outright. Writing
+    // this result would clobber a good read with an empty one and turn the
+    // pipeline amber for the day, so a recent ok doc wins and we leave it be.
+    const kept = readExistingOk()
+    if (kept) {
+      console.log('calendar: denied in this process context, kept the ok read from ' + kept.updatedAt
+        + ' (' + kept.events.length + ' events)')
+      return
+    }
     doc = {
       updatedAt: now,
       source: 'eventkit',

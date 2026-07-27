@@ -5,9 +5,9 @@ data/study.json while the trial runs; the HUD keeps its panel but PLAY
 sessions are retired (queue stays empty).
 
 Anki counts come from AnkiConnect when Anki is open, otherwise from a
-read-only copy of collection.anki2. Obsidian counts come from scanning the
-vault for the plugin's <!--SR:...--> scheduling comments; inline cards
-without a comment yet are counted as new.
+read-only copy of collection.anki2. Obsidian counts come from bin/obsidian-sr.mjs,
+which scans the vault for the plugin's <!--SR:...--> scheduling comments;
+inline cards without a comment yet are counted as new.
 
 Usage:
   python3 bin/anki-due.py            print JSON summary to stdout
@@ -19,18 +19,18 @@ decks or topics, only counts.
 
 import json
 import os
-import re
 import shutil
 import sqlite3
+import subprocess
 import sys
 import tempfile
 import urllib.request
-from datetime import date, datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT_FILE = ROOT / "data" / "study.json"
-VAULT = Path.home() / "Documents" / "Obsidian Vault"
+SR_HELPER = ROOT / "bin" / "obsidian-sr.mjs"
 ANKI_DIR = Path.home() / "Library" / "Application Support" / "Anki2" / "User 1"
 ANKICONNECT = "http://127.0.0.1:8765"
 
@@ -100,41 +100,50 @@ def anki_via_sqlite():
         shutil.rmtree(tmp.parent, ignore_errors=True)
 
 
-SR_COMMENT = re.compile(r"<!--SR:([^>]*)-->")
-SR_ENTRY = re.compile(r"!(\d{4}-\d{2}-\d{2}),\d+,\d+")
-INLINE_CARD = re.compile(r"^[^\n:]+::.+$", re.M)
+def node_binary():
+    """Find node the way the scheduled run will see it, PATH first."""
+    for candidate in (shutil.which("node"), "/opt/homebrew/bin/node", "/usr/local/bin/node"):
+        if candidate and Path(candidate).exists():
+            return candidate
+    return None
 
 
 def obsidian_sr_counts():
-    """Count due and new inline cards for the Spaced Repetition plugin.
+    """Due and new inline cards for the Spaced Repetition plugin.
 
-    Only notes tagged #flashcards are scanned, matching the plugin's default.
-    The Flashcards folder is Yanki (Anki) territory and is skipped.
+    Delegated to bin/obsidian-sr.mjs rather than scanned here: homebrew
+    python3 holds no TCC grant for ~/Documents, so reading the vault from
+    this process blocks forever in the scheduled run (tccd wait, no CPU, and
+    no prompt can ever show), while node reads the same vault on the same run.
+    That hang cost the morning run three days straight to 27 Jul 2026. The
+    timeout is the backstop: an unreachable count degrades honestly instead
+    of stalling the briefing.
     """
-    due = new = 0
-    today = date.today().isoformat()
-    if not VAULT.exists():
-        return {"due": 0, "new": 0, "ok": False}
-    for p in VAULT.rglob("*.md"):
-        parts = p.relative_to(VAULT).parts
-        if parts[0] in {"Flashcards", ".obsidian", ".trash"}:
-            continue
-        try:
-            text = p.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            continue
-        if "#flashcards" not in text:
-            continue
-        scheduled = 0
-        for m in SR_COMMENT.finditer(text):
-            for e in SR_ENTRY.finditer(m.group(1)):
-                scheduled += 1
-                if e.group(1) <= today:
-                    due += 1
-        cards = len(INLINE_CARD.findall(text))
-        if cards > scheduled:
-            new += cards - scheduled
-    return {"due": due, "new": new, "ok": True}
+    unavailable = lambda reason: {"due": 0, "new": 0, "ok": False, "reason": reason}
+    node = node_binary()
+    if node is None:
+        return unavailable("node-not-found")
+    try:
+        res = subprocess.run(
+            [node, str(SR_HELPER)],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            stdin=subprocess.DEVNULL,
+        )
+    except subprocess.TimeoutExpired:
+        return unavailable("timeout")
+    except OSError as exc:
+        return unavailable(f"spawn-failed: {exc}")
+    if res.returncode != 0:
+        return unavailable(f"helper-exit-{res.returncode}")
+    try:
+        out = json.loads(res.stdout)
+    except ValueError:
+        return unavailable("bad-output")
+    if not isinstance(out, dict) or "due" not in out or "new" not in out:
+        return unavailable("bad-output")
+    return out
 
 
 def main():
@@ -155,9 +164,16 @@ def main():
         d.startswith(CAREER_DECK_PREFIXES) for d in per_deck
     ) and sr["due"] == 0
 
-    note = "SRS trial: reviews live in Anki ({} due, {} new) and the Obsidian review plugin ({} due, {} new). Sessions here are paused during the trial.".format(
-        anki_due, anki_new, sr["due"], sr["new"]
-    )
+    # The note reaches work mode unshed, so it carries counts and never deck
+    # names. An unreachable half is stated plainly rather than read as zero.
+    if sr["ok"]:
+        note = "SRS trial: reviews live in Anki ({} due, {} new) and the Obsidian review plugin ({} due, {} new). Sessions here are paused during the trial.".format(
+            anki_due, anki_new, sr["due"], sr["new"]
+        )
+    else:
+        note = "SRS trial: Anki reads {} due and {} new. The Obsidian review plugin count was unreachable ({}), so open the Review pane in Obsidian if you expect cards there. Sessions here are paused during the trial.".format(
+            anki_due, anki_new, sr.get("reason", "unknown")
+        )
 
     now = datetime.now(SYD)
     out = {
@@ -179,6 +195,7 @@ def main():
                 "srDue": sr["due"],
                 "srNew": sr["new"],
                 "ankiSource": anki_source,
+                "srSource": "vault" if sr["ok"] else "unavailable",
             },
         },
         "upcoming": [],
